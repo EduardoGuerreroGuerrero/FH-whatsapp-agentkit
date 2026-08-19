@@ -43,8 +43,5 @@ Thumbs.db
 *.swo
 *~
 
-# Docker
-.dockerignore
-
 # Node (si se usa para Claude Code)
 node_modules/

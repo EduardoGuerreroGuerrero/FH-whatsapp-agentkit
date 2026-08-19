@@ -24,7 +24,7 @@ fi
 
 PYTHON_MAJOR=$(python3 -c 'import sys; print(sys.version_info.major)')
 PYTHON_MINOR=$(python3 -c 'import sys; print(sys.version_info.minor)')
-if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]); then
+if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]; }; then
     echo ""
     echo "  ERROR: Necesitas Python 3.11 o superior."
     echo "  Version actual: $(python3 --version)"
@@ -58,8 +58,14 @@ echo "  [3/4] Preparando carpetas..."
 mkdir -p knowledge
 echo "  OK — Estructura lista"
 
-# ── Listo ─────────────────────────────────────────────────────
-echo "  [4/4] Todo verificado"
+# ── Preparar .env ────────────────────────────────────────────
+echo "  [4/4] Preparando variables de entorno..."
+if [ ! -f .env ] && [ -f .env.example ]; then
+    cp .env.example .env
+    echo "  OK — .env creado desde .env.example (todavia vacio, lo llenamos en el setup)"
+else
+    echo "  OK — .env ya existe, no se toca"
+fi
 
 echo ""
 echo "==========================================================="
@@ -74,6 +80,11 @@ echo "    /build-agent"
 echo ""
 echo "  Claude Code te guiara paso a paso para construir"
 echo "  tu agente de WhatsApp personalizado con IA."
+echo ""
+echo "  Vas a necesitar:"
+echo "    - Una API key de Anthropic  (platform.anthropic.com)"
+echo "    - Una cuenta de Zernio      (zernio.com — plan free, sin tarjeta)"
+echo "      o credenciales de Meta Cloud API si prefieres conectarte tu mismo"
 echo ""
 echo "==========================================================="
 echo ""
