@@ -136,8 +136,8 @@ Eliges uno de los dos durante el setup.
 | App de Facebook | No hace falta | Sí, tipo Business |
 | App Review | No | Sí |
 | Verificación de negocio | La haces desde el Embedded Signup | Cuenta de Facebook Business verificada |
-| Costo | 2 cuentas conectadas gratis, sin tarjeta | Gratis por conversación |
-| Probar sin número propio | Sí, tiene número de pruebas compartido | No |
+| Costo | 2 cuentas conectadas gratis, sin tarjeta. En los dos casos las conversaciones se las pagas a Meta | Le pagas a Meta directo, sin intermediario |
+| Probar sin número propio | Sí, número de pruebas compartido: 50 mensajes cada 24 h, gratis | Sí, Meta da un número de prueba, pero antes hay que crear la app |
 | Para quién | **Recomendado.** Casi todo el mundo | Si ya tienes tu app de Meta armada |
 
 **Zernio** ([zernio.com](https://zernio.com)) es el camino corto: creas la cuenta, conectas
@@ -196,8 +196,12 @@ si no, el cliente recibiría la misma respuesta siete veces.
 **Deduplica por id de evento.** La entrega es *at-least-once*: el mismo mensaje puede
 llegar dos veces. La base de datos garantiza que solo se responda una.
 
-**Verifica la firma.** Cada webhook viene firmado con HMAC-SHA256. Sin esa verificación,
-cualquiera que conozca tu URL podría inyectarle mensajes a tu agente.
+**Verifica la firma.** Cada webhook viene firmado con HMAC-SHA256 y el agente lo comprueba
+antes de tocar el mensaje. Sin esa verificación, cualquiera que conozca tu URL podría
+inyectarle mensajes a tu agente. Ojo: la comprobación necesita que hayas cargado
+`ZERNIO_WEBHOOK_SECRET` (o `META_APP_SECRET`). Si lo dejas vacío el agente arranca igual
+—para que puedas probar sin trabarte— pero avisa en los logs y deja pasar todo. Antes de
+poner el agente a atender clientes de verdad, cárgalo.
 
 **Además:** cada cliente tiene su propio historial. Si alguien te escribe hoy y vuelve
 mañana, el agente recuerda la conversación anterior. Y nunca inventa información — si no
@@ -232,15 +236,16 @@ API Keys → Create Key. Empieza con `sk-ant-...`.
 
 ## Cuánto cuesta
 
-AgentKit es gratis y open source. Lo que pagas es el uso:
+AgentKit es gratis y open source. Lo que pagas es el uso, y conviene verlo con números
+reales en vez de un "es súper barato".
 
-| Concepto | Costo |
+| Concepto | Costo real |
 |---|---|
 | AgentKit | Gratis, MIT |
-| Zernio | Primeras 2 cuentas conectadas gratis, sin tarjeta |
-| Meta Cloud API | Gratis por conversación de servicio al cliente |
-| Claude API | Por uso. Ver la tabla de abajo |
-| Railway | Tiene plan gratuito para proyectos chicos |
+| Zernio | Las primeras 2 cuentas conectadas son gratis, sin tarjeta. Si conectas tu propio número de WhatsApp Business, ahí termina el costo. Si necesitas que Zernio te dé un número, son entre $3 y $21 al mes según el país |
+| Meta Cloud API | Las conversaciones que abre el cliente son gratis. Solo pagas las que inicias tú con plantilla |
+| Claude API | Por uso. Ver el cálculo de abajo |
+| Railway | Ya no hay plan gratuito de verdad: arrancas con $5 de crédito de prueba y después el plan Hobby son $5 al mes |
 
 ### Elegir el modelo de Claude
 
@@ -252,8 +257,22 @@ Se cambia con la variable `ANTHROPIC_MODEL`, sin tocar código.
 | **Claude Sonnet 5** | `claude-sonnet-5` | $3 / $15 | **Default.** El balance correcto para atención a clientes |
 | Claude Haiku 4.5 | `claude-haiku-4-5` | $1 / $5 | Solo preguntas frecuentes y respuestas cortas |
 
-Para dar una idea: una conversación típica de WhatsApp son unos pocos miles de tokens.
-Con Sonnet 5, atender cientos de conversaciones al mes cuesta unos pocos dólares.
+**El cálculo, sin trampa.** Un chatbot no cobra por mensaje: cobra por token, y en cada turno
+se le vuelve a mandar a Claude el system prompt completo más el historial de la conversación.
+Eso es lo que hace que el costo crezca más rápido de lo que uno espera.
+
+Una conversación de 8 mensajes ida y vuelta, con un system prompt de unos 1.500 tokens
+(la información de tu negocio), gasta alrededor de 16.000 tokens de entrada y 1.200 de salida:
+
+| Modelo | Por conversación | 300 al mes | 1.000 al mes |
+|---|---|---|---|
+| Claude Opus 5 | ~$0.11 | ~$33 | ~$110 |
+| Claude Sonnet 5 | ~$0.07 | ~$20 | ~$66 |
+| Claude Haiku 4.5 | ~$0.02 | ~$7 | ~$22 |
+
+Son estimaciones: si tu system prompt es más largo (un menú grande, un catálogo entero),
+sube proporcionalmente. La forma más efectiva de bajarlo no es cambiar de modelo, es no
+meter en el prompt información que tus clientes nunca preguntan.
 
 ---
 
@@ -267,6 +286,14 @@ Con Sonnet 5, atender cientos de conversaciones al mes cuesta unos pocos dólare
 | **Tienda online** | Toma pedidos por WhatsApp | "Tu pedido de 2 pasteles quedó confirmado" |
 | **SaaS / software** | Soporte post-venta | "Para resetear tu contraseña, sigue estos pasos..." |
 | **Cualquier negocio** | Preguntas frecuentes 24/7 | "Nuestro horario es..." |
+
+**Qué hace y qué no, para que no haya sorpresas.** El agente conversa: entiende, responde
+con la información de tu negocio, toma los datos y te los deja en el historial. Lo que
+todavía no hace solo es *ejecutar* la acción del otro lado — escribir en tu calendario,
+descontar stock, cobrar. `agent/tools.py` es el lugar donde va esa parte, y las funciones
+quedan listas para conectar; pedírselo a Claude Code es el siguiente paso, no algo que
+salga andando de la caja.
+
 
 ---
 

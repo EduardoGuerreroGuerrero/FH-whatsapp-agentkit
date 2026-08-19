@@ -409,7 +409,7 @@ bash start.sh">copiar</button>
         <div class="panel" style="flex:1; padding:20px 22px">
           <h3 style="font-size:21px">Verifica tu entorno</h3>
           <p class="lead" style="font-size:15.5px; margin-top:10px">
-            Chequea que tengas Python 3.11 o más, instala las dependencias, arma las carpetas y crea tu <span class="mono" style="color:var(--bone); font-size:14px">.env</span> vacío.
+            Chequea que tengas Python 3.11 o más y Claude Code instalado, arma las carpetas y crea tu <span class="mono" style="color:var(--bone); font-size:14px">.env</span> vacío.
             Si algo falta, te dice exactamente qué instalar y dónde.
           </p>
           <div class="mono" style="margin-top:14px; font-size:12.5px; color:var(--lime)">$ bash start.sh</div>
@@ -505,7 +505,7 @@ bash start.sh">copiar</button>
   <div class="panel reveal" style="padding:26px 20px 30px; background:linear-gradient(180deg, rgba(236,235,228,.025), transparent 60%)">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1" style="margin-bottom:26px">
       <h3 class="mono" style="font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:var(--lime); font-weight:500">El camino de un mensaje</h3>
-      <span class="mono" style="font-size:11.5px; color:var(--muted)">de la burbuja del cliente a la respuesta, en menos de 3 segundos</span>
+      <span class="mono" style="font-size:11.5px; color:var(--muted)">de la burbuja del cliente a la respuesta</span>
     </div>
 
     <div class="flow">
@@ -601,7 +601,7 @@ bash start.sh">copiar</button>
           </div>
           <div class="flex gap-4" style="padding:13px 0">
             <span class="mono" style="flex:0 0 106px; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted)">Sin número</span>
-            <span style="font-size:14.5px">Tiene sandbox con número compartido para probar antes de tener el tuyo: 50 mensajes cada 24 horas, gratis.</span>
+            <span style="font-size:14.5px">Tiene sandbox con número compartido para probar antes de tener el tuyo: 50 mensajes cada 24 horas, gratis, y la sesión te dura 7 días.</span>
           </div>
         </div>
 
@@ -658,7 +658,7 @@ bash start.sh">copiar</button>
           META_PHONE_NUMBER_ID=<span style="opacity:.6">...</span><br>
           META_VERIFY_TOKEN=<span style="opacity:.6">...</span><br>
           META_APP_SECRET=<span style="opacity:.6">...</span><br>
-          META_API_VERSION=<span style="opacity:.6">v21.0</span>
+          META_API_VERSION=<span style="opacity:.6">v25.0</span>
         </div>
 
         <a href="https://developers.facebook.com/docs/whatsapp/cloud-api" target="_blank" rel="noopener" class="btn btn-ghost" style="margin-top:22px; width:100%">
@@ -699,10 +699,10 @@ bash start.sh">copiar</button>
       <span class="mono" style="font-size:10.5px; letter-spacing:.2em; color:var(--lime)">02</span>
       <h3 style="font-size:22px; margin-top:12px">Clínica o salón</h3>
       <p class="lead" style="font-size:15px; margin-top:10px">
-        Agenda citas, ofrece los horarios que tienes libres, reprograma y manda el recordatorio del día anterior.
+        Toma la cita: pregunta el servicio, ofrece los horarios que le pasaste y te deja los datos listos en el historial.
       </p>
       <div style="margin-top:18px; border-left:2px solid rgba(200,242,78,.5); padding-left:12px">
-        <p style="font-size:14px; color:var(--muted); font-style:italic">"¿Tienes lugar el jueves a la tarde?"</p>
+        <p style="font-size:14px; color:var(--muted); font-style:italic">"¿Tienes lugar el jueves por la tarde?"</p>
       </div>
     </div>
 
@@ -714,7 +714,7 @@ bash start.sh">copiar</button>
         te los pasa al vendedor.
       </p>
       <div style="margin-top:18px; border-left:2px solid rgba(200,242,78,.5); padding-left:12px">
-        <p style="font-size:14px; color:var(--muted); font-style:italic">"Busco 2 ambientes, hasta 900 dólares"</p>
+        <p style="font-size:14px; color:var(--muted); font-style:italic">"Busco depa de 2 habitaciones, hasta 900 dólares"</p>
       </div>
     </div>
 
@@ -722,10 +722,10 @@ bash start.sh">copiar</button>
       <span class="mono" style="font-size:10.5px; letter-spacing:.2em; color:var(--lime)">04</span>
       <h3 style="font-size:22px; margin-top:12px">Tienda online</h3>
       <p class="lead" style="font-size:15px; margin-top:10px">
-        Contesta por stock, talles, medios de pago, costo de envío y estado del pedido. A las 3 de la mañana también.
+        Contesta por stock, tallas, medios de pago, costo de envío y estado del pedido. A las 3 de la mañana también.
       </p>
       <div style="margin-top:18px; border-left:2px solid rgba(200,242,78,.5); padding-left:12px">
-        <p style="font-size:14px; color:var(--muted); font-style:italic">"¿Les queda la campera negra en M?"</p>
+        <p style="font-size:14px; color:var(--muted); font-style:italic">"¿Les queda la chaqueta negra en M?"</p>
       </div>
     </div>
 
@@ -768,7 +768,9 @@ bash start.sh">copiar</button>
         <div class="mono" style="font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted)">Lo que hay adentro</div>
         <div class="mono" style="margin-top:12px; font-size:13px; line-height:2.1; color:var(--bone)">
           CLAUDE.md <span style="color:var(--muted)">&mdash; el cerebro</span><br>
+          /build-agent <span style="color:var(--muted)">&mdash; el disparador</span><br>
           start.sh <span style="color:var(--muted)">&mdash; el arranque</span><br>
+          scripts/audit.py <span style="color:var(--muted)">&mdash; la auditoría</span><br>
           README.md <span style="color:var(--muted)">&mdash; el mapa</span><br>
           LICENSE <span style="color:var(--muted)">&mdash; MIT</span>
         </div>

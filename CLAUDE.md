@@ -38,7 +38,7 @@ Cuando generes el agente, SIEMPRE usa estas tecnologías:
 | Base de datos | SQLite (local) / PostgreSQL (prod) | Via SQLAlchemy |
 | Variables | python-dotenv | NUNCA hardcodear keys |
 | Contenedores | Docker Compose | Para producción |
-| Deploy | Railway | Un clic desde GitHub |
+| Deploy | Railway | Conectas el repo de GitHub y Railway lo levanta |
 
 **Dependencias Python (requirements.txt):**
 ```
@@ -193,12 +193,21 @@ memory.py — recupera el historial de esa conversación
     ↓
 brain.py — llama a Claude con system prompt + historial + mensaje nuevo
     ↓
-tools.py — si el agente necesita hacer algo (agendar, buscar, etc.)
-    ↓
 providers/ — envía la respuesta por el proveedor elegido
     ↓
 WhatsApp (el cliente recibe la respuesta)
 ```
+
+**Dónde entra `tools.py`, y dónde no.** La información del negocio (menú, precios, horarios,
+lo que haya en `/knowledge`) llega al agente **por el system prompt**, no por herramientas:
+se incorpora textualmente a `config/prompts.yaml` durante la Fase 3. Por eso el agente puede
+contestar preguntas sin ejecutar nada.
+
+`tools.py` es otra cosa: es el lugar para las **acciones** (reservar una cita, confirmar un
+pedido, abrir un ticket). Hoy el agente generado **no las llama solo**: son funciones listas
+para usar, pero conectarlas al ciclo de tool use de Claude es un paso aparte. Si el usuario
+pide que el agente agende de verdad y no solo que hable de agendar, decíselo claro y armá esa
+parte con él en vez de dar por hecho que ya funciona.
 
 **Por qué se responde antes de procesar.** Los proveedores esperan un `2xx` en unos 5
 segundos. Llamar a Claude tarda más que eso. Si el agente procesa antes de contestar, el
@@ -616,7 +625,10 @@ class ProveedorZernio(ProveedorWhatsApp):
         # Opcional: solo se usa para el chequeo de conexion al arrancar.
         # Para responder, el account_id sale del propio webhook.
         self.account_id = os.getenv("ZERNIO_ACCOUNT_ID", "")
-        self.base_url = os.getenv("ZERNIO_BASE_URL", BASE_URL_POR_DEFECTO).rstrip("/")
+        # Ojo con el "or": os.getenv(clave, default) solo usa el default si la clave NO
+        # existe. Como el .env trae "ZERNIO_BASE_URL=" vacia, os.getenv devuelve "" y el
+        # default nunca se aplicaria. El "or" cubre los dos casos.
+        self.base_url = (os.getenv("ZERNIO_BASE_URL") or BASE_URL_POR_DEFECTO).rstrip("/")
 
         if not self.api_key:
             logger.warning("ZERNIO_API_KEY no esta configurada: el agente no va a poder responder")
@@ -645,7 +657,16 @@ class ProveedorZernio(ProveedorWhatsApp):
             self.webhook_secret.encode("utf-8"), cuerpo, hashlib.sha256
         ).hexdigest()
 
-        if not hmac.compare_digest(firma_esperada, firma_recibida):
+        # compare_digest sobre str exige ASCII puro. Los headers HTTP pueden traer bytes
+        # que Starlette decodifica como latin-1, y ahi tiraria TypeError: eso escaparia del
+        # handler como un 500, y el proveedor reintentaria el evento siete veces.
+        try:
+            iguales = hmac.compare_digest(firma_esperada, firma_recibida)
+        except TypeError:
+            logger.warning("La firma del webhook trae caracteres invalidos: rechazado")
+            return False
+
+        if not iguales:
             logger.warning("Firma de webhook invalida: rechazado")
             return False
         return True
@@ -808,9 +829,11 @@ class ProveedorMeta(ProveedorWhatsApp):
     def __init__(self):
         self.access_token = os.getenv("META_ACCESS_TOKEN", "")
         self.phone_number_id = os.getenv("META_PHONE_NUMBER_ID", "")
-        self.verify_token = os.getenv("META_VERIFY_TOKEN", "agentkit-verify")
+        # Mismo cuidado que en zernio.py: una variable declarada pero vacia en el .env
+        # devuelve "" y no el default, asi que se usa "or".
+        self.verify_token = os.getenv("META_VERIFY_TOKEN") or "agentkit-verify"
         self.app_secret = os.getenv("META_APP_SECRET", "")
-        self.api_version = os.getenv("META_API_VERSION", "v25.0")
+        self.api_version = os.getenv("META_API_VERSION") or "v25.0"
 
         if not self.access_token or not self.phone_number_id:
             logger.warning(
@@ -852,7 +875,15 @@ class ProveedorMeta(ProveedorWhatsApp):
             self.app_secret.encode("utf-8"), cuerpo, hashlib.sha256
         ).hexdigest()
 
-        if not hmac.compare_digest(firma_esperada, cabecera.removeprefix("sha256=")):
+        # Igual que en zernio.py: compare_digest sobre str exige ASCII puro y un header
+        # con bytes raros tiraria TypeError, devolviendo 500 en vez de 401.
+        try:
+            iguales = hmac.compare_digest(firma_esperada, cabecera.removeprefix("sha256="))
+        except TypeError:
+            logger.warning("La firma del webhook trae caracteres invalidos: rechazado")
+            return False
+
+        if not iguales:
             logger.warning("Firma de webhook invalida: rechazado")
             return False
         return True
@@ -955,8 +986,10 @@ Servidor principal del agente.
 Funciona con cualquier proveedor (Zernio, Meta) gracias a la capa de providers.
 """
 
+import asyncio
 import logging
 import os
+from collections import defaultdict
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -967,6 +1000,7 @@ from agent.brain import generar_respuesta, obtener_mensaje_error
 from agent.memory import (
     guardar_mensaje,
     inicializar_db,
+    liberar_evento,
     limpiar_eventos_viejos,
     marcar_evento_procesado,
     obtener_historial,
@@ -991,6 +1025,11 @@ logger.setLevel(logging.DEBUG if ENVIRONMENT == "development" else logging.INFO)
 
 PORT = int(os.getenv("PORT", "8000"))
 
+# Un candado por numero de telefono. En WhatsApp es normal que alguien mande "hola" y
+# medio segundo despues la pregunta de verdad: sin esto los dos mensajes se procesarian
+# en paralelo, los dos leerian el mismo historial y las escrituras quedarian intercaladas.
+_candados: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
 # Si la configuracion esta mal, guardamos el error y lo mostramos en el health check,
 # en vez de reventar en el import y dejar a Railway reiniciando el contenedor a ciegas.
 proveedor = None
@@ -999,6 +1038,10 @@ try:
     proveedor = obtener_proveedor()
 except Exception as e:  # noqa: BLE001 — cualquier problema de configuracion
     error_configuracion = str(e)
+
+# Resultado del chequeo de credenciales que se hace al arrancar. Se expone en el health
+# check: que el servidor conteste no significa que el agente pueda responder por WhatsApp.
+estado_proveedor: dict = {"ok": None, "detalle": "sin verificar"}
 
 
 @asynccontextmanager
@@ -1009,9 +1052,11 @@ async def lifespan(app: FastAPI):
     logger.info("Base de datos lista")
     logger.info(f"Servidor AgentKit escuchando en el puerto {PORT}")
 
+    global estado_proveedor
     if proveedor is not None:
         logger.info(f"Proveedor de WhatsApp: {proveedor.__class__.__name__}")
         ok, detalle = await proveedor.verificar_conexion()
+        estado_proveedor = {"ok": ok, "detalle": detalle}
         logger.info(f"Conexion con el proveedor: {'OK' if ok else 'ERROR'} — {detalle}")
     else:
         logger.error(f"Proveedor de WhatsApp NO configurado: {error_configuracion}")
@@ -1027,10 +1072,14 @@ async def health_check():
     """Endpoint de salud para Railway y monitoreo."""
     if error_configuracion:
         return {"status": "error", "service": "agentkit", "detalle": error_configuracion}
+
+    # Se responde 200 aunque las credenciales esten mal, para que Railway no marque el
+    # deploy como caido y puedas leer el diagnostico. El detalle esta en el cuerpo.
     return {
-        "status": "ok",
+        "status": "ok" if estado_proveedor["ok"] else "degradado",
         "service": "agentkit",
         "proveedor": proveedor.__class__.__name__ if proveedor else None,
+        "conexion": estado_proveedor,
     }
 
 
@@ -1043,6 +1092,12 @@ async def webhook_verificacion(request: Request):
     respuesta = await proveedor.validar_webhook(request)
     if respuesta is not None:
         return PlainTextResponse(respuesta)
+
+    # Meta pide un 403 cuando manda hub.mode=subscribe y el verify_token no coincide.
+    # Devolverle 200 le hace creer que la URL quedo verificada cuando no es cierto.
+    if request.query_params.get("hub.mode") == "subscribe":
+        raise HTTPException(status_code=403, detail="Verify token incorrecto")
+
     return {"status": "ok"}
 
 
@@ -1090,27 +1145,48 @@ async def webhook_handler(request: Request, tareas: BackgroundTasks):
 
 
 async def procesar_mensaje(msg: MensajeEntrante):
-    """Genera la respuesta y la manda de vuelta. Corre fuera del ciclo del webhook."""
-    try:
-        # El historial se lee ANTES de guardar el mensaje actual: brain.py agrega
-        # el mensaje nuevo al final, y asi no queda duplicado.
-        historial = await obtener_historial(msg.telefono)
-        respuesta = await generar_respuesta(msg.texto, historial)
+    """
+    Genera la respuesta y la manda de vuelta. Corre fuera del ciclo del webhook.
 
-        await guardar_mensaje(msg.telefono, "user", msg.texto)
-        await guardar_mensaje(msg.telefono, "assistant", respuesta)
+    Se toma un candado por telefono: dos mensajes seguidos del mismo cliente se
+    atienden en orden, no en paralelo, para que el historial no se mezcle.
+    """
+    evento_id = msg.contexto.get("evento_id") or msg.mensaje_id
 
-        if await proveedor.enviar_mensaje(msg.telefono, respuesta, msg.contexto):
-            logger.info(f"Respuesta enviada a {msg.telefono}: {respuesta}")
-        else:
-            logger.error(f"No se pudo enviar la respuesta a {msg.telefono}")
-
-    except Exception as e:  # noqa: BLE001
-        logger.exception(f"Error procesando el mensaje de {msg.telefono}: {e}")
+    async with _candados[msg.telefono]:
         try:
-            await proveedor.enviar_mensaje(msg.telefono, obtener_mensaje_error(), msg.contexto)
-        except Exception:  # noqa: BLE001
-            logger.error("Tampoco se pudo avisarle al cliente del error")
+            # El historial se lee ANTES de guardar el mensaje actual: brain.py agrega
+            # el mensaje nuevo al final, y asi no queda duplicado.
+            historial = await obtener_historial(msg.telefono)
+            respuesta, es_respuesta_real = await generar_respuesta(msg.texto, historial)
+
+            enviado = await proveedor.enviar_mensaje(msg.telefono, respuesta, msg.contexto)
+
+            if not enviado:
+                # El evento se marco como procesado ANTES de llegar hasta aca, para que dos
+                # entregas simultaneas no se dupliquen. Si el envio fallo, hay que soltarlo:
+                # si no, el reintento del proveedor se descartaria por duplicado y el cliente
+                # se quedaria sin respuesta para siempre.
+                logger.error(f"No se pudo enviar la respuesta a {msg.telefono}; se libera el evento")
+                await liberar_evento(evento_id)
+                return
+
+            # Solo se guarda en el historial lo que de verdad es conversacion. Los avisos
+            # tecnicos ("estoy teniendo problemas") no son un turno del agente: guardarlos
+            # los deja contaminando el contexto de todos los mensajes que vengan despues.
+            if es_respuesta_real:
+                await guardar_mensaje(msg.telefono, "user", msg.texto)
+                await guardar_mensaje(msg.telefono, "assistant", respuesta)
+
+            logger.info(f"Respuesta enviada a {msg.telefono}: {respuesta}")
+
+        except Exception as e:  # noqa: BLE001
+            logger.exception(f"Error procesando el mensaje de {msg.telefono}: {e}")
+            await liberar_evento(evento_id)
+            try:
+                await proveedor.enviar_mensaje(msg.telefono, obtener_mensaje_error(), msg.contexto)
+            except Exception:  # noqa: BLE001
+                logger.error("Tampoco se pudo avisarle al cliente del error")
 ```
 
 #### 3.8 — `agent/brain.py`
@@ -1140,14 +1216,18 @@ client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 #   claude-opus-5     el mas capaz             $5 / $25 por millon de tokens
 #   claude-sonnet-5   el balanceado (default)  $3 / $15
 #   claude-haiku-4-5  el mas barato y rapido   $1 / $5
-MODELO = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5")
+# El "or" y no el default de os.getenv: una variable declarada vacia en el .env
+# devuelve "" y dejaria al agente sin modelo.
+MODELO = os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-5"
 
 # Es un bot de respuestas cortas: con esfuerzo bajo contesta mas rapido y mas barato.
 # Dejalo vacio en el .env para no mandar el parametro.
 ESFUERZO = os.getenv("ANTHROPIC_EFFORT", "low").strip()
 
-# WhatsApp son mensajes cortos, pero 1024 tokens a veces cortan una respuesta larga.
-MAX_TOKENS = 2048
+# WhatsApp son mensajes cortos, pero este tope NO es solo la respuesta: en los modelos
+# actuales el razonamiento interno tambien cuenta contra el. Con el margen justo, una
+# pregunta que exija pensar un poco deja al agente sin espacio para contestar.
+MAX_TOKENS = int(os.getenv("ANTHROPIC_MAX_TOKENS") or "4096")
 
 # Los modelos mas viejos no aceptan output_config. Si la primera llamada falla por eso,
 # se reintenta sin el parametro y se recuerda para las siguientes.
@@ -1199,12 +1279,20 @@ def _extraer_texto(respuesta) -> str:
 
 
 def _es_error_de_esfuerzo(error: Exception) -> bool:
-    """True si el modelo rechazo la llamada por el parametro output_config/effort."""
+    """
+    True solo si el modelo rechazo la llamada POR el parametro output_config/effort.
+
+    Se exige que sea un 400 de peticion invalida y no cualquier error que mencione la
+    palabra: un 529 de sobrecarga que la nombre de paso no debe apagar el parametro
+    para todo el proceso.
+    """
+    if getattr(error, "status_code", None) != 400:
+        return False
     texto = str(error).lower()
     return "output_config" in texto or "effort" in texto
 
 
-async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
+async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, bool]:
     """
     Genera una respuesta con Claude.
 
@@ -1213,12 +1301,17 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
         historial: los mensajes anteriores, [{"role": "user"|"assistant", "content": "..."}]
 
     Returns:
-        El texto de la respuesta que hay que mandarle al cliente.
+        (texto, es_respuesta_real)
+
+        "es_respuesta_real" es False cuando lo que se devuelve es un aviso tecnico
+        (error o fallback) y no una respuesta del agente. main.py lo usa para no
+        guardar esos avisos en el historial: si se guardaran, quedarian contaminando
+        el contexto de todos los mensajes siguientes.
     """
     global _soporta_esfuerzo
 
     if not mensaje or len(mensaje.strip()) < 2:
-        return obtener_mensaje_fallback()
+        return obtener_mensaje_fallback(), False
 
     mensajes = [{"role": m["role"], "content": m["content"]} for m in historial]
     mensajes.append({"role": "user", "content": mensaje})
@@ -1247,21 +1340,27 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
                 respuesta = await _llamar({})
             except Exception as e2:  # noqa: BLE001
                 logger.error(f"Error llamando a Claude: {e2}")
-                return obtener_mensaje_error()
+                return obtener_mensaje_error(), False
         else:
             logger.error(f"Error llamando a Claude: {e}")
-            return obtener_mensaje_error()
+            return obtener_mensaje_error(), False
+
+    if getattr(respuesta, "stop_reason", None) == "max_tokens":
+        logger.warning(
+            f"La respuesta se corto por llegar al tope de {MAX_TOKENS} tokens. "
+            "Si pasa seguido, sube ANTHROPIC_MAX_TOKENS o acorta el system prompt."
+        )
 
     texto = _extraer_texto(respuesta)
     if not texto:
         logger.warning("Claude devolvio una respuesta sin texto")
-        return obtener_mensaje_fallback()
+        return obtener_mensaje_fallback(), False
 
     logger.info(
         f"Respuesta generada con {MODELO} "
         f"({respuesta.usage.input_tokens} in / {respuesta.usage.output_tokens} out)"
     )
-    return texto
+    return texto, True
 ```
 
 #### 3.9 — `agent/memory.py`
@@ -1298,6 +1397,15 @@ if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 elif DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+
+# En produccion, SQLite vive dentro del contenedor y el disco del contenedor es efimero:
+# cada redespliegue borra el historial de todas las conversaciones. Avisarlo fuerte, porque
+# el agente arranca igual y el problema recien se nota cuando un cliente vuelve a escribir.
+if DATABASE_URL.startswith("sqlite") and os.getenv("ENVIRONMENT") == "production":
+    logger.warning(
+        "Estas en produccion con SQLite. El historial se va a borrar en cada redespliegue. "
+        "Agrega PostgreSQL y configura DATABASE_URL para que el agente recuerde a sus clientes."
+    )
 
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -1364,6 +1472,21 @@ async def marcar_evento_procesado(evento_id: str) -> bool:
             return False
 
 
+async def liberar_evento(evento_id: str):
+    """
+    Borra la marca de un evento para que el reintento del proveedor SI se procese.
+
+    Se usa cuando el mensaje se marco como procesado pero despues fallo el envio de la
+    respuesta. Sin esto, el reintento se descartaria por duplicado y el cliente se
+    quedaria sin respuesta para siempre.
+    """
+    if not evento_id:
+        return
+    async with async_session() as session:
+        await session.execute(delete(EventoProcesado).where(EventoProcesado.evento_id == evento_id))
+        await session.commit()
+
+
 async def limpiar_eventos_viejos(dias: int = 7):
     """Borra los eventos de hace mas de N dias para que la tabla no crezca sin fin."""
     limite = ahora() - timedelta(days=dias)
@@ -1427,7 +1550,12 @@ Usa este template base y agrega las funciones según el caso:
 
 """
 Herramientas especificas del negocio.
-Estas funciones extienden las capacidades del agente mas alla de responder texto.
+
+OJO: estas funciones NO se ejecutan solas todavia. La informacion del negocio le llega
+al agente por el system prompt (config/prompts.yaml), asi que para CONTESTAR preguntas
+no hace falta nada de aca. Este archivo es el lugar para las ACCIONES —reservar, cobrar,
+abrir un ticket— y conectarlas al ciclo de tool use de Claude es un paso aparte.
+
 Claude Code genera las funciones segun los casos de uso elegidos en la entrevista.
 """
 
@@ -1583,12 +1711,14 @@ async def main():
         historial = await obtener_historial(TELEFONO_TEST)
 
         print("\nAgente: ", end="", flush=True)
-        respuesta = await generar_respuesta(mensaje, historial)
+        respuesta, es_respuesta_real = await generar_respuesta(mensaje, historial)
         print(respuesta)
         print()
 
-        await guardar_mensaje(TELEFONO_TEST, "user", mensaje)
-        await guardar_mensaje(TELEFONO_TEST, "assistant", respuesta)
+        # Igual que en produccion: los avisos tecnicos no entran al historial
+        if es_respuesta_real:
+            await guardar_mensaje(TELEFONO_TEST, "user", mensaje)
+            await guardar_mensaje(TELEFONO_TEST, "assistant", respuesta)
 
 
 if __name__ == "__main__":
@@ -1611,6 +1741,8 @@ ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-sonnet-5
 # Esfuerzo de razonamiento: low | medium | high. Vacio = no enviar el parametro.
 ANTHROPIC_EFFORT=low
+# Opcional, default 4096. El razonamiento interno cuenta contra este tope.
+# ANTHROPIC_MAX_TOKENS=4096
 
 # ── Proveedor de WhatsApp ──────────────────────────────────
 WHATSAPP_PROVIDER=zernio
@@ -1749,18 +1881,17 @@ Si un archivo es muy grande, prioriza lo que un cliente preguntaría por WhatsAp
 
 Solo ejecutar si el usuario confirma que quiere hacer deploy.
 
-1. **Verificar Docker instalado:**
-   ```bash
-   docker --version
-   ```
-   Si no está: "Instala Docker Desktop desde https://docker.com/get-started"
+1. **Docker es opcional.** Railway construye la imagen a partir del `Dockerfile` en sus
+   servidores; el usuario no necesita Docker en su máquina para hacer deploy.
 
-2. **Build local:**
+   Solo si el usuario quiere probar la imagen localmente antes de subirla:
    ```bash
-   docker compose build
+   docker --version        # si no lo tiene: https://docker.com/get-started
+   docker compose up --build
    ```
+   Si no tiene Docker, no lo trabes ahí: continúa al paso siguiente.
 
-3. **IMPORTANTE: Antes de subir a GitHub, reemplazar el `.gitignore`.**
+2. **IMPORTANTE: Antes de subir a GitHub, reemplazar el `.gitignore`.**
 
    El `.gitignore` del template de AgentKit excluye los archivos generados (`agent/`,
    `config/`, etc.) para mantener limpio el repo público de AgentKit. Pero el usuario
@@ -1799,17 +1930,31 @@ Solo ejecutar si el usuario confirma que quiere hacer deploy.
    .idea/
    ```
 
-4. **Instrucciones para Railway (mostrar paso a paso):**
+3. **Instrucciones para Railway (mostrar paso a paso):**
 
    ```
    === Deploy a Railway ===
 
    Paso 1: Sube tu proyecto a GitHub
-      git init
-      git add .
-      git commit -m "feat: mi agente WhatsApp con AgentKit"
+
+      OJO: estas parado dentro del clon de AgentKit, asi que ya hay un repo de git
+      aca y su "origin" apunta al repo de AgentKit, no al tuyo. NO uses "git init":
+      lo que hay que hacer es cambiarle el destino.
+
+      Primero crea un repo vacio en github.com/new (sin README, sin .gitignore).
+      Despues:
+
+      git remote remove origin
       git remote add origin https://github.com/TU-USUARIO/mi-agente.git
+      git add .
+      git commit -m "feat: mi agente de WhatsApp"
+      git branch -M main
       git push -u origin main
+
+      Si prefieres empezar con un historial limpio, sin los commits de AgentKit:
+      borra la carpeta .git y arranca de cero antes de los comandos de arriba:
+
+      rm -rf .git && git init
 
    Paso 2: Conecta con Railway
       1. Ve a railway.app y crea una cuenta
@@ -1823,16 +1968,43 @@ Solo ejecutar si el usuario confirma que quiere hacer deploy.
       - ANTHROPIC_MODEL     = claude-sonnet-5
       - WHATSAPP_PROVIDER   = [zernio | meta]
       - ENVIRONMENT         = production
-      - DATABASE_URL        = [Railway te la da si agregas PostgreSQL al proyecto]
+      - DATABASE_URL        = ${{Postgres.DATABASE_URL}}
       - [Variables del proveedor elegido — ver abajo]
 
       NO agregues PORT: Railway lo asigna solo y el Dockerfile ya lo respeta.
 
+      Sobre DATABASE_URL, dos cosas que no son obvias:
+
+      1. Primero hay que agregar la base: en el proyecto, "New" -> "Database" ->
+         "Add PostgreSQL". Eso crea un servicio aparte.
+      2. Railway NO copia sola la URL al servicio de tu agente. En las Variables de
+         TU servicio hay que escribir, literal, con las llaves dobles:
+
+            DATABASE_URL = ${{Postgres.DATABASE_URL}}
+
+         (Si le pusiste otro nombre al servicio de la base, usa ese nombre en lugar
+         de "Postgres".)
+
+      SI SALTEAS ESTO, el agente igual arranca: cae a SQLite dentro del contenedor.
+      Pero el disco del contenedor es efimero, asi que CADA vez que Railway
+      redespliegue —cada push, cada cambio de variable— el historial de todas las
+      conversaciones se borra y el agente deja de acordarse de sus clientes.
+
       Si ZERNIO:  ZERNIO_API_KEY, ZERNIO_WEBHOOK_SECRET, ZERNIO_ACCOUNT_ID (opcional)
       Si META:    META_ACCESS_TOKEN, META_PHONE_NUMBER_ID, META_VERIFY_TOKEN, META_APP_SECRET
 
-   Paso 4: Configura el webhook
-      1. Copia la URL pública que Railway te asigna (ej: tu-app.up.railway.app)
+   Paso 4: Genera la URL publica
+
+      Railway NO le pone dominio publico a tu servicio solo. Hay que pedirselo:
+      tu servicio -> Settings -> Networking -> "Generate Domain".
+      Te queda algo como tu-app.up.railway.app. Esa es la URL que vas a usar abajo.
+
+      Verifica que responde antes de seguir:
+         curl https://tu-app.up.railway.app/
+      Tiene que contestar {"status":"ok",...}. Si contesta {"status":"error",...},
+      el campo "detalle" dice que variable falta.
+
+   Paso 5: Configura el webhook
 
       Si ZERNIO:
          2. Ve a zernio.com → dashboard → Webhooks → Create webhook
@@ -1859,7 +2031,7 @@ Solo ejecutar si el usuario confirma que quiere hacer deploy.
    ¡Listo! Tu agente ya está en producción.
    ```
 
-5. **Contarle al usuario la regla de las 24 horas:**
+4. **Contarle al usuario la regla de las 24 horas:**
 
    ```
    Un detalle de WhatsApp que conviene que sepas:
@@ -1872,7 +2044,7 @@ Solo ejecutar si el usuario confirma que quiere hacer deploy.
    y lo armamos.
    ```
 
-6. **Resumen final:**
+5. **Resumen final:**
    ```
    ===========================================================
       AgentKit — Resumen
@@ -1885,7 +2057,7 @@ Solo ejecutar si el usuario confirma que quiere hacer deploy.
    - Cerebro con Claude AI ([MODELO])
    - Memoria de conversaciones por cliente
    - Deduplicación de eventos: nunca responde dos veces lo mismo
-   - Herramientas: [LISTA DE HERRAMIENTAS]
+   - Herramientas base en tools.py: [LAS QUE REALMENTE ESCRIBISTE]
    - System prompt personalizado para tu negocio
    - Docker Compose para producción
 
@@ -1955,6 +2127,7 @@ python3 scripts/audit.py
 ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-sonnet-5     # claude-opus-5 | claude-sonnet-5 | claude-haiku-4-5
 ANTHROPIC_EFFORT=low                # low | medium | high — vacio para no enviarlo
+# ANTHROPIC_MAX_TOKENS=4096         # opcional, default 4096
 
 # ── Proveedor de WhatsApp (zernio | meta) ─────────────────
 WHATSAPP_PROVIDER=
