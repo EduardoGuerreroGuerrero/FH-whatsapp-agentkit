@@ -127,7 +127,10 @@ class ProveedorMeta(ProveedorWhatsApp):
                         "messaging_product": "whatsapp",
                         "to": telefono,
                         "type": "text",
-                        "text": {"body": mensaje},
+                        # preview_url=True: si el mensaje trae un link (p. ej. al menu en
+                        # fruppyhelados.com), WhatsApp muestra una tarjeta con miniatura en
+                        # vez de solo texto plano.
+                        "text": {"body": mensaje, "preview_url": True},
                     },
                     headers={
                         "Authorization": f"Bearer {self.access_token}",
