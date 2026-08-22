@@ -51,12 +51,24 @@ except ImportError:
 
 # Terminos que NO deben aparecer en ningun archivo del repo (chequeo 3).
 # Ordenados de mas largo a mas corto para reportar el match mas especifico.
+# NOTA: "claude-" (con guion) y no "claude" a secas, porque el repo SI menciona
+# "Claude Code" como asistente de codificacion compatible; lo que no debe quedar
+# son rastros del proveedor de IA que se reemplazo (Anthropic -> Gemini).
 TERMINOS_PROHIBIDOS = [
     "TWILIO_ACCOUNT_SID",
     "TWILIO_AUTH_TOKEN",
     "TWILIO_PHONE_NUMBER",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_EFFORT",
+    "ANTHROPIC_MAX_TOKENS",
     "twilio",
     "whapi",
+    "anthropic",
+    "claude-opus",
+    "claude-sonnet",
+    "claude-haiku",
+    "sk-ant-",
 ]
 
 # Carpetas que nunca se recorren.

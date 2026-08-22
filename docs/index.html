@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WhatsApp AgentKit — tu agente de WhatsApp con IA, construido por Claude Code</title>
-<meta name="description" content="Claude Code te entrevista sobre tu negocio y te escribe un agente de WhatsApp completo: FastAPI, Claude, memoria por cliente y deploy a Railway. En menos de 30 minutos, sin escribir una línea de código.">
+<title>WhatsApp AgentKit — tu agente de WhatsApp con IA, gratis con Gemini</title>
+<meta name="description" content="Tu asistente de codificación con IA (Devin, Claude Code, etc.) te entrevista sobre tu negocio y te escribe un agente de WhatsApp completo: FastAPI, Gemini, memoria por cliente y deploy a Railway. En menos de 30 minutos, sin escribir una línea de código.">
 <meta name="theme-color" content="#0A0B0A">
 <meta property="og:title" content="WhatsApp AgentKit">
-<meta property="og:description" content="Tu agente de WhatsApp con IA, construido por Claude Code en menos de 30 minutos. Sin escribir una línea de código.">
+<meta property="og:description" content="Tu agente de WhatsApp con IA, gratis con Gemini, en menos de 30 minutos. Sin escribir una línea de código.">
 <meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -289,7 +289,7 @@
       </h1>
 
       <p class="lead rise" style="animation-delay:.14s; margin-top:34px; max-width:44ch">
-        Tu agente de WhatsApp con IA, construido por Claude Code en menos de 30 minutos.
+        Tu agente de WhatsApp con IA, gratis con Gemini, en menos de 30 minutos.
         <span style="color:var(--bone)">Sin escribir una línea de código.</span>
       </p>
 
@@ -298,7 +298,7 @@
         <span class="badge"><b>133</b> forks</span>
         <span class="badge">Licencia <b>MIT</b></span>
         <span class="badge">Python <b>3.11+</b></span>
-        <span class="badge">Claude <b>Sonnet</b></span>
+        <span class="badge">Gemini <b>gratis</b></span>
       </div>
 
       <div class="rise flex flex-wrap gap-3" style="animation-delay:.26s; margin-top:34px">
@@ -328,8 +328,8 @@ bash start.sh">copiar</button>
           <div class="term-line"><span class="p">$</span><span class="c">git clone <span class="dim">https://github.com/Hainrixz/whatsapp-agentkit.git</span></span></div>
           <div class="term-line"><span class="p">$</span><span class="c">cd whatsapp-agentkit</span></div>
           <div class="term-line"><span class="p">$</span><span class="c">bash start.sh</span></div>
-          <div class="term-line" style="margin-top:10px"><span class="p" style="color:var(--muted)">&gt;</span><span class="c" style="color:var(--muted)">entorno listo. abre Claude y escribe:</span></div>
-          <div class="term-line"><span class="p">$</span><span class="c" style="color:var(--lime)">/build-agent<span class="caret" style="margin-left:6px"></span></span></div>
+          <div class="term-line" style="margin-top:10px"><span class="p" style="color:var(--muted)">&gt;</span><span class="c" style="color:var(--muted)">entorno listo. abre tu asistente de IA y dile:</span></div>
+          <div class="term-line"><span class="p">$</span><span class="c" style="color:var(--lime)">sigue CLAUDE.md<span class="caret" style="margin-left:6px"></span></span></div>
         </div>
       </div>
 
@@ -384,10 +384,11 @@ bash start.sh">copiar</button>
 <section id="como-funciona" class="wrap" style="padding-top:96px; padding-bottom:20px">
   <div class="sec-head reveal" style="max-width:720px">
     <div class="sec-idx"><span></span> 01 &mdash; el proceso</div>
-    <h2 class="sec-title">Cinco fases. Tú contestas, Claude Code construye.</h2>
+    <h2 class="sec-title">Cinco fases. Tú contestas, tu asistente de IA construye.</h2>
     <p class="lead">
-      AgentKit no es una librería ni un SaaS. Es un manual de instrucciones que Claude Code lee y ejecuta
-      dentro de tu terminal. Estas son las fases, en orden, y no avanza a la siguiente sin tu OK.
+      AgentKit no es una librería ni un SaaS. Es un manual de instrucciones que tu asistente de codificación
+      (Devin, Claude Code, etc.) lee y ejecuta dentro de tu terminal. Estas son las fases, en orden, y no
+      avanza a la siguiente sin tu OK.
     </p>
   </div>
 
@@ -409,7 +410,7 @@ bash start.sh">copiar</button>
         <div class="panel" style="flex:1; padding:20px 22px">
           <h3 style="font-size:21px">Verifica tu entorno</h3>
           <p class="lead" style="font-size:15.5px; margin-top:10px">
-            Chequea que tengas Python 3.11 o más y Claude Code instalado, arma las carpetas y crea tu <span class="mono" style="color:var(--bone); font-size:14px">.env</span> vacío.
+            Chequea que tengas Python 3.11 o más, arma las carpetas y crea tu <span class="mono" style="color:var(--bone); font-size:14px">.env</span> vacío.
             Si algo falta, te dice exactamente qué instalar y dónde.
           </p>
           <div class="mono" style="margin-top:14px; font-size:12.5px; color:var(--lime)">$ bash start.sh</div>
@@ -452,7 +453,7 @@ bash start.sh">copiar</button>
           </p>
           <div class="mono" style="margin-top:16px; font-size:12.5px; line-height:1.95; color:var(--muted); border-left:1px solid var(--line); padding-left:14px">
             agent/main.py<span style="color:var(--muted); opacity:.6"> &mdash; servidor FastAPI + webhook</span><br>
-            agent/brain.py<span style="opacity:.6"> &mdash; Claude API + system prompt</span><br>
+            agent/brain.py<span style="opacity:.6"> &mdash; Gemini API + system prompt</span><br>
             agent/memory.py<span style="opacity:.6"> &mdash; historial por número</span><br>
             agent/tools.py<span style="opacity:.6"> &mdash; herramientas de tu rubro</span><br>
             agent/providers/<span style="opacity:.6"> &mdash; conexión con WhatsApp</span><br>
@@ -473,7 +474,7 @@ bash start.sh">copiar</button>
           <h3 style="font-size:21px">Lo pruebas en tu terminal</h3>
           <p class="lead" style="font-size:15.5px; margin-top:10px">
             Antes de tocar WhatsApp, hablas con tu agente en un chat simulado. Escribes como si fueras un cliente.
-            Si contesta algo que no te gusta, se lo dices a Claude Code y lo ajusta ahí mismo.
+            Si contesta algo que no te gusta, se lo dices a tu asistente y lo ajusta ahí mismo.
           </p>
           <div class="mono" style="margin-top:14px; font-size:12.5px; color:var(--lime)">$ python tests/test_local.py</div>
         </div>
@@ -540,7 +541,7 @@ bash start.sh">copiar</button>
       <div class="node accent">
         <span class="n-i">05</span>
         <span class="n-t">Cerebro</span>
-        <span class="n-s">brain.py &middot; Claude</span>
+        <span class="n-s">brain.py &middot; Gemini</span>
       </div>
       <div class="link" aria-hidden="true"><i></i><b></b></div>
 
@@ -564,7 +565,7 @@ bash start.sh">copiar</button>
     <div class="sec-idx"><span></span> 02 &mdash; conexión con whatsapp</div>
     <h2 class="sec-title">Dos caminos para conectar tu número.</h2>
     <p class="lead">
-      Tu agente necesita hablar con WhatsApp. Claude Code te pregunta cuál quieres y genera solo el adaptador
+      Tu agente necesita hablar con WhatsApp. Tu asistente te pregunta cuál quieres y genera solo el adaptador
       de ese proveedor, con sus variables de entorno. Puedes cambiar después sin tocar el resto del código.
     </p>
   </div>
@@ -768,7 +769,6 @@ bash start.sh">copiar</button>
         <div class="mono" style="font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted)">Lo que hay adentro</div>
         <div class="mono" style="margin-top:12px; font-size:13px; line-height:2.1; color:var(--bone)">
           CLAUDE.md <span style="color:var(--muted)">&mdash; el cerebro</span><br>
-          /build-agent <span style="color:var(--muted)">&mdash; el disparador</span><br>
           start.sh <span style="color:var(--muted)">&mdash; el arranque</span><br>
           scripts/audit.py <span style="color:var(--muted)">&mdash; la auditoría</span><br>
           README.md <span style="color:var(--muted)">&mdash; el mapa</span><br>
@@ -783,7 +783,7 @@ bash start.sh">copiar</button>
         era fea: o contratas a un dev, o pagas ochenta dólares por mes por algo que contesta con botones.
       </p>
       <p class="lead">
-        Así que en vez de escribir otro bot, escribí las instrucciones para que Claude Code escriba el tuyo.
+        Así que en vez de escribir otro bot, escribí las instrucciones para que tu asistente de IA escriba el tuyo.
         Todo el trabajo está en un archivo, <span class="mono" style="color:var(--bone); font-size:15px">CLAUDE.md</span>:
         qué preguntar, en qué orden, qué generar con cada respuesta, cómo probarlo y cómo subirlo. Tú clonas,
         corres un comando y contestas. El código aparece.
@@ -840,7 +840,7 @@ bash start.sh">copiar</button>
     </div>
 
     <p class="mono" style="margin-top:26px; font-size:11.5px; color:var(--muted); letter-spacing:.04em">
-      Necesitas: Python 3.11+, Claude Code y una API key de Anthropic.
+      Necesitas: Python 3.11+, un asistente de codificación con IA (Devin, etc.) y una API key de Gemini (gratis).
     </p>
   </div>
 </section>

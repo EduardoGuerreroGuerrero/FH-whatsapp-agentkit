@@ -1,0 +1,29 @@
+# Configuracion del negocio — Generado por AgentKit
+negocio:
+  nombre: "Fruppy Helados"
+  descripcion: "Heladeria y fruteria ubicada en la ciudad de Barranquilla. Ofrecemos productos alimenticios preparados principalmente a partir de frutas y helado, con enfasis en ser saludables, sabrosos y economicos."
+  horario: "9:00 am - 9:00 pm"
+  ubicacion: "Barranquilla, Colombia"
+  contacto:
+    whatsapp: "304 568 6743"
+    redes_sociales:
+      facebook: "Fruppy Helados"
+      instagram: "Fruppy Helados"
+    delivery:
+      - "DiDi Food"
+      - "Rappi"
+    pagos:
+      - "Nequi"
+      - "DaviPlata"
+
+agente:
+  nombre: "Fruppy"
+  tono: "amigable y casual"
+  casos_de_uso:
+    - "Responder preguntas frecuentes"
+    - "Tomar pedidos"
+
+metadata:
+  creado: "2025-05-23"
+  proveedor: ""
+  version: "2.0"

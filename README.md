@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/assets/hero.png" alt="WhatsApp AgentKit — tu agente de WhatsApp con IA, construido por Claude Code" width="820">
+  <img src="docs/assets/hero.png" alt="WhatsApp AgentKit — tu agente de WhatsApp con IA" width="820">
 </p>
 
 <p align="center">
   <a href="https://github.com/Hainrixz/whatsapp-agentkit"><img src="https://img.shields.io/github/stars/Hainrixz/whatsapp-agentkit?style=flat-square&color=25D366" alt="Estrellas"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-blue?style=flat-square" alt="Licencia MIT"></a>
   <img src="https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square" alt="Python 3.11+">
-  <img src="https://img.shields.io/badge/IA-Claude-D97757?style=flat-square" alt="Claude">
+  <img src="https://img.shields.io/badge/IA-Gemini%20(gratis)-4285F4?style=flat-square" alt="Gemini">
   <img src="https://img.shields.io/badge/WhatsApp-Zernio%20%7C%20Meta-25D366?style=flat-square" alt="Zernio o Meta Cloud API">
 </p>
 
@@ -24,12 +24,17 @@
 **WhatsApp AgentKit convierte una conversación de 20 minutos en un agente de WhatsApp
 que atiende a tus clientes.**
 
-No es una plantilla que copias y adaptas. Es un sistema de instrucciones que Claude Code
-lee para entrevistarte sobre tu negocio y después escribir, probar y desplegar el agente
-completo por ti: el servidor, la conexión con WhatsApp, la memoria de cada cliente y el
-prompt que le da personalidad.
+No es una plantilla que copias y adaptas. Es un sistema de instrucciones (`CLAUDE.md`)
+que tu asistente de codificación con IA — funciona con [Devin](https://devin.ai) o
+cualquier otro que pueda leer archivos del repo — lee para entrevistarte sobre tu
+negocio y después escribir, probar y desplegar el agente completo por ti: el servidor,
+la conexión con WhatsApp, la memoria de cada cliente y el prompt que le da personalidad.
+El cerebro del agente usa la API gratuita de **Google Gemini**.
 
 Tú no escribes código. Respondes preguntas.
+
+> ¿Vas a usar Devin en vez de Claude Code? Mira <a href="guia.md">guia.md</a> para los
+> detalles de instalación específicos.
 
 Lo hicimos porque el 90% del trabajo de montar un agente de WhatsApp no es la IA — es la
 plomería: webhooks, firmas, tokens, reintentos, deploy. Esa parte ya está resuelta y
@@ -48,22 +53,23 @@ cd whatsapp-agentkit
 bash start.sh
 ```
 
-Después abre Claude Code y escribe el comando:
+Después abre tu asistente de codificación (por ejemplo, ejecuta `devin` en esta carpeta)
+y pídele que arranque el proceso, por ejemplo:
 
-```bash
-claude
-# dentro de Claude Code:
-/build-agent
+```
+Quiero construir mi agente de WhatsApp con AgentKit, sigue el proceso de CLAUDE.md
 ```
 
-Y ya. Claude Code te guía desde ahí.
+Muchos asistentes (Devin incluido) ya cargan `CLAUDE.md` automáticamente como contexto
+del proyecto, así que no necesitas un comando especial. Ver <a href="guia.md">guia.md</a>
+para el detalle paso a paso con Devin.
 
 ---
 
 ## Cómo funciona
 
-`start.sh` solo verifica tu entorno. El sistema real arranca con `/build-agent`, que hace
-que Claude Code lea `CLAUDE.md` y ejecute cinco fases.
+`start.sh` solo verifica tu entorno. El sistema real arranca cuando tu asistente lee
+`CLAUDE.md` y ejecuta cinco fases.
 
 ### Fase 1 — Verifica tu entorno
 
@@ -73,7 +79,7 @@ Chequea Python 3.11+, crea las carpetas, instala las dependencias y prepara el `
 
 Diez preguntas, una por una: cómo se llama tu negocio, a qué se dedica, para qué quieres
 el agente, cómo se va a llamar, qué tono debe tener, tu horario, tus archivos de precios
-o menú, tu API key de Anthropic, y con qué servicio vas a conectar WhatsApp.
+o menú, tu API key de Gemini (gratis), y con qué servicio vas a conectar WhatsApp.
 
 ### Fase 3 — Construye el agente
 
@@ -83,7 +89,7 @@ Con tus respuestas escribe todo esto:
 tu-proyecto/
 ├── agent/
 │   ├── main.py              Servidor que recibe los mensajes de WhatsApp
-│   ├── brain.py             Conexión con Claude — el cerebro
+│   ├── brain.py             Conexión con Gemini — el cerebro
 │   ├── memory.py            Historial de cada cliente + deduplicación de eventos
 │   ├── tools.py             Herramientas específicas de tu negocio
 │   └── providers/           Conexión con tu servicio de WhatsApp
@@ -116,7 +122,7 @@ Agente: El americano está en $45 pesos.
         Quieres que te aparte uno?
 ```
 
-Si algo no te gusta, se lo dices a Claude Code y lo ajusta ahí mismo.
+Si algo no te gusta, se lo dices a tu asistente y lo ajusta ahí mismo.
 
 ### Fase 5 — Lo pones en línea
 
@@ -148,7 +154,7 @@ respondes un mensaje desde tu celular y quedas activado.
 **Meta Cloud API** ([developers.facebook.com](https://developers.facebook.com)) te da
 control total sobre la integración. Es más trabajo de configuración inicial.
 
-Cambiar de uno a otro después es una frase: abre Claude Code y dile *"quiero migrar de
+Cambiar de uno a otro después es una frase: abre tu asistente y dile *"quiero migrar de
 Zernio a Meta Cloud API"*.
 
 ---
@@ -177,7 +183,7 @@ main.py responde 200 AHORA y encola el trabajo
 memory.py busca el historial de ESE cliente
          │
          ▼
-brain.py llama a Claude con el system prompt + historial + mensaje
+brain.py llama a Gemini con el system prompt + historial + mensaje
          │
          ▼
 providers/ envía la respuesta por WhatsApp
@@ -189,7 +195,7 @@ El cliente recibe la respuesta en segundos
 Tres decisiones de diseño que importan:
 
 **Responde primero, trabaja después.** Los proveedores esperan una confirmación en unos
-5 segundos y, si no la reciben, reintentan el mismo mensaje hasta 7 veces. Llamar a Claude
+5 segundos y, si no la reciben, reintentan el mismo mensaje hasta 7 veces. Llamar a Gemini
 tarda más que eso. Por eso el webhook confirma de inmediato y procesa en segundo plano —
 si no, el cliente recibiría la misma respuesta siete veces.
 
@@ -217,16 +223,15 @@ sabe algo, lo dice y ofrece pasar el contacto a una persona.
 - Linux: `sudo apt install python3.11`
 - Verifica: `python3 --version`
 
-**2. Claude Code**
-```bash
-# necesitas Node.js primero: https://nodejs.org
-npm install -g @anthropic-ai/claude-code
-claude   # solo la primera vez, para autenticarte
-```
+**2. Un asistente de codificación con IA**
 
-**3. API key de Anthropic**
-[platform.anthropic.com](https://platform.anthropic.com/settings/keys) → Settings →
-API Keys → Create Key. Empieza con `sk-ant-...`.
+Cualquiera que pueda leer y ejecutar comandos sobre el repo sirve. Por ejemplo
+[Devin CLI](https://devin.ai) — ver <a href="guia.md">guia.md</a> para el detalle —
+o Claude Code, si prefieres seguir usándolo.
+
+**3. API key de Google Gemini (gratis)**
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey) → inicia sesión con tu
+cuenta de Google → "Create API key". No pide tarjeta de crédito.
 
 **4. Una cuenta de WhatsApp API**
 [Zernio](https://zernio.com) (recomendado) o
@@ -244,35 +249,29 @@ reales en vez de un "es súper barato".
 | AgentKit | Gratis, MIT |
 | Zernio | Las primeras 2 cuentas conectadas son gratis, sin tarjeta. Si conectas tu propio número de WhatsApp Business, ahí termina el costo. Si necesitas que Zernio te dé un número, son entre $3 y $21 al mes según el país |
 | Meta Cloud API | Las conversaciones que abre el cliente son gratis. Solo pagas las que inicias tú con plantilla |
-| Claude API | Por uso. Ver el cálculo de abajo |
+| Gemini API | **Gratis** en la capa Free de Google AI Studio. Ver el detalle de límites abajo |
 | Railway | Ya no hay plan gratuito de verdad: arrancas con $5 de crédito de prueba y después el plan Hobby son $5 al mes |
 
-### Elegir el modelo de Claude
+### Elegir el modelo de Gemini
 
-Se cambia con la variable `ANTHROPIC_MODEL`, sin tocar código.
+Se cambia con la variable `GEMINI_MODEL`, sin tocar código.
 
-| Modelo | ID | Precio por millón de tokens | Cuándo usarlo |
+| Modelo | ID | Costo | Cuándo usarlo |
 |---|---|---|---|
-| Claude Opus 5 | `claude-opus-5` | $5 entrada / $25 salida | El agente razona sobre catálogos, agendas o reglas complejas |
-| **Claude Sonnet 5** | `claude-sonnet-5` | $3 / $15 | **Default.** El balance correcto para atención a clientes |
-| Claude Haiku 4.5 | `claude-haiku-4-5` | $1 / $5 | Solo preguntas frecuentes y respuestas cortas |
+| Gemini 2.5 Pro | `gemini-2.5-pro` | De pago (sin capa gratuita) | Razonar sobre catálogos, agendas o reglas muy complejas |
+| Gemini 2.5 Flash | `gemini-2.5-flash` | Gratis, límites más bajos | Si `flash-lite` no alcanza en calidad |
+| **Gemini 2.5 Flash-Lite** | `gemini-2.5-flash-lite` | **Default. Gratis**, sin tarjeta | El balance correcto para atención a clientes |
 
-**El cálculo, sin trampa.** Un chatbot no cobra por mensaje: cobra por token, y en cada turno
-se le vuelve a mandar a Claude el system prompt completo más el historial de la conversación.
-Eso es lo que hace que el costo crezca más rápido de lo que uno espera.
+**La capa gratuita tiene límites, no es ilimitada.** Google limita las peticiones por
+minuto (RPM) y por día (RPD) según el modelo — se ven en tu proyecto de
+[Google AI Studio](https://aistudio.google.com). Si tu agente recibe mucho volumen y
+empiezas a ver errores `429 RESOURCE_EXHAUSTED`, las opciones son esperar a que se
+reponga la cuota, o activar la facturación en el proyecto para pasar a un tier pagado
+(Flash-Lite sigue siendo muy barato: $0.10 / $0.40 por millón de tokens de entrada/salida).
 
-Una conversación de 8 mensajes ida y vuelta, con un system prompt de unos 1.500 tokens
-(la información de tu negocio), gasta alrededor de 16.000 tokens de entrada y 1.200 de salida:
-
-| Modelo | Por conversación | 300 al mes | 1.000 al mes |
-|---|---|---|---|
-| Claude Opus 5 | ~$0.11 | ~$33 | ~$110 |
-| Claude Sonnet 5 | ~$0.07 | ~$20 | ~$66 |
-| Claude Haiku 4.5 | ~$0.02 | ~$7 | ~$22 |
-
-Son estimaciones: si tu system prompt es más largo (un menú grande, un catálogo entero),
-sube proporcionalmente. La forma más efectiva de bajarlo no es cambiar de modelo, es no
-meter en el prompt información que tus clientes nunca preguntan.
+A diferencia de Claude o GPT, aquí no hace falta calcular cuánto vas a gastar por
+conversación: mientras te mantengas dentro de los límites gratuitos, el costo de IA
+es $0.
 
 ---
 
@@ -291,8 +290,8 @@ meter en el prompt información que tus clientes nunca preguntan.
 con la información de tu negocio, toma los datos y te los deja en el historial. Lo que
 todavía no hace solo es *ejecutar* la acción del otro lado — escribir en tu calendario,
 descontar stock, cobrar. `agent/tools.py` es el lugar donde va esa parte, y las funciones
-quedan listas para conectar; pedírselo a Claude Code es el siguiente paso, no algo que
-salga andando de la caja.
+quedan listas para conectar; pedírselo a tu asistente (Devin, etc.) es el siguiente paso,
+no algo que salga andando de la caja.
 
 
 ---
@@ -320,13 +319,14 @@ python3 scripts/audit.py
 
 ## Personalizarlo después
 
-No necesitas tocar código. Abre Claude Code y pídele cambios en lenguaje natural:
+No necesitas tocar código. Abre tu asistente (Devin, etc.) en la carpeta del proyecto y
+pídele cambios en lenguaje natural:
 
-```bash
-claude "El agente está muy formal. Hazlo más amigable y casual."
-claude "Agregamos servicio de delivery. Actualiza el agente."
-claude "Quiero que pueda consultar disponibilidad de citas."
-claude "Quiero migrar de Zernio a Meta Cloud API."
+```
+"El agente está muy formal. Hazlo más amigable y casual."
+"Agregamos servicio de delivery. Actualiza el agente."
+"Quiero que pueda consultar disponibilidad de citas."
+"Quiero migrar de Zernio a Meta Cloud API."
 ```
 
 ---
@@ -335,7 +335,7 @@ claude "Quiero migrar de Zernio a Meta Cloud API."
 
 | Componente | Tecnología | Para qué sirve |
 |---|---|---|
-| IA | Claude (`claude-sonnet-5` por default) | Genera las respuestas |
+| IA | Google Gemini (`gemini-2.5-flash-lite` por default, gratis) | Genera las respuestas |
 | Servidor | FastAPI + Uvicorn | Recibe los webhooks de WhatsApp |
 | WhatsApp | Zernio / Meta Cloud API | Conecta con WhatsApp — tú eliges |
 | Base de datos | SQLite local / PostgreSQL en producción | Historial y deduplicación |
@@ -351,7 +351,7 @@ interfaz, así que `main.py` no sabe ni le importa cuál estás usando. Solo lla
 ## Preguntas frecuentes
 
 **¿Necesito saber programar?**
-No. Claude Code escribe todo el código. Tú respondes preguntas sobre tu negocio.
+No. Tu asistente de IA escribe todo el código. Tú respondes preguntas sobre tu negocio.
 
 **¿Puedo usarlo con mi negocio real?**
 Sí. Después de probarlo localmente lo subes a Railway y queda atendiendo de verdad.
@@ -364,7 +364,7 @@ Nunca inventa datos.
 Sí. Clona el repo una vez por negocio. Cada agente es independiente.
 
 **¿Puedo cambiar de proveedor de WhatsApp después?**
-Sí. Abre Claude Code y dile qué quieres cambiar. Regenera los archivos necesarios.
+Sí. Abre tu asistente y dile qué quieres cambiar. Regenera los archivos necesarios.
 
 **¿El agente puede escribirle primero a un cliente?**
 No de entrada, y no es una limitación de AgentKit: WhatsApp solo permite texto libre
@@ -395,7 +395,8 @@ entorno estén documentadas y que los links del README respondan.
 
 Creado por **Todo de IA** — [@soyenriquerocha](https://instagram.com/soyenriquerocha)
 
-Construido con [Claude Code](https://claude.com/claude-code) para builders de LATAM.
+Construido para builders de LATAM. Funciona con [Devin](https://devin.ai), Claude Code
+o cualquier asistente de codificación con IA capaz de leer este repo.
 
 ---
 

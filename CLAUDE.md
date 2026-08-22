@@ -1,8 +1,9 @@
-# AgentKit — Sistema de Instrucciones para Claude Code
+# AgentKit — Sistema de Instrucciones para el agente de IA
 
-> Este archivo es el CEREBRO de AgentKit. Claude Code lo lee automáticamente
-> y sabe exactamente qué hacer para guiar al usuario a construir su agente de WhatsApp.
-> NO modificar manualmente a menos que sepas lo que haces.
+> Este archivo es el CEREBRO de AgentKit. Cualquier asistente de codificación con
+> agentic coding capaz de leer archivos del repo (Devin, Claude Code, etc.) lo carga
+> automáticamente y sabe exactamente qué hacer para guiar al usuario a construir su
+> agente de WhatsApp. NO modificar manualmente a menos que sepas lo que haces.
 
 ---
 
@@ -33,7 +34,7 @@ Cuando generes el agente, SIEMPRE usa estas tecnologías:
 |-----------|-----------|-------|
 | Runtime | Python 3.11+ | Verificar en Fase 1 |
 | Servidor | FastAPI + Uvicorn | Webhook handler genérico |
-| IA | Anthropic Claude API | Modelo default: `claude-sonnet-5` (configurable) |
+| IA | Google Gemini API (gratis) | Modelo default: `gemini-2.5-flash-lite` (configurable) |
 | WhatsApp | Zernio / Meta Cloud API | El usuario elige durante el setup |
 | Base de datos | SQLite (local) / PostgreSQL (prod) | Via SQLAlchemy |
 | Variables | python-dotenv | NUNCA hardcodear keys |
@@ -44,7 +45,7 @@ Cuando generes el agente, SIEMPRE usa estas tecnologías:
 ```
 fastapi>=0.141.0
 uvicorn[standard]>=0.52.0
-anthropic>=0.122.0
+google-genai>=1.0.0
 httpx>=0.28.0
 python-dotenv>=1.2.0
 sqlalchemy[asyncio]>=2.0.52
@@ -64,18 +65,21 @@ Dos dependencias que parecen opcionales y no lo son:
   Railway, `memory.py` reescribe la URL a `postgresql+asyncpg://` y sin ese paquete el
   agente no arranca.
 
-### 2.1 Modelo de Claude
+### 2.1 Modelo de Gemini
 
-El modelo se elige con la variable `ANTHROPIC_MODEL`. Default: `claude-sonnet-5`.
+El modelo se elige con la variable `GEMINI_MODEL`. Default: `gemini-2.5-flash-lite`.
 
-| Modelo | ID | Precio por millón de tokens | Cuándo usarlo |
+| Modelo | ID | Costo | Cuándo usarlo |
 |---|---|---|---|
-| Claude Opus 5 | `claude-opus-5` | $5 entrada / $25 salida | El agente tiene que razonar sobre catálogos, agendas o reglas complicadas |
-| Claude Sonnet 5 | `claude-sonnet-5` | $3 / $15 | **Default.** El balance correcto para atención a clientes |
-| Claude Haiku 4.5 | `claude-haiku-4-5` | $1 / $5 | Solo preguntas frecuentes y respuestas cortas |
+| Gemini 2.5 Pro | `gemini-2.5-pro` | De pago (no tiene capa gratuita) | Solo si el agente tiene que razonar sobre catálogos o reglas muy complejas |
+| Gemini 2.5 Flash | `gemini-2.5-flash` | Gratis en Google AI Studio (límites más bajos) | Si `flash-lite` no alcanza en calidad de respuesta |
+| Gemini 2.5 Flash-Lite | `gemini-2.5-flash-lite` | **Default. Gratis**, sin tarjeta, límites más generosos | El balance correcto para atención a clientes por WhatsApp |
 
-Si el usuario no dice nada, usa el default. No cambies de modelo por tu cuenta para
-"ahorrar": es una decisión del dueño del negocio, no tuya.
+Si el usuario no dice nada, usa el default. La API key gratuita se consigue en
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey), sin tarjeta de crédito.
+No cambies de modelo por tu cuenta para "ahorrar": es una decisión del dueño del negocio,
+no tuya. Ojo: la capa gratuita tiene límites de peticiones por minuto/día que varían según
+el modelo — si el usuario espera mucho volumen, coméntaselo en la Fase 5.
 
 ---
 
@@ -145,14 +149,14 @@ primero, va a necesitar plantillas.
 
 ## 4. Arquitectura del agente a construir
 
-Claude Code genera esta estructura completa para cada usuario:
+El asistente genera esta estructura completa para cada usuario:
 
 ```
 agentkit/
 ├── agent/
 │   ├── __init__.py        ← Package init
 │   ├── main.py            ← FastAPI app + webhook (agnóstico del proveedor)
-│   ├── brain.py           ← Conexión Claude API + system prompt desde prompts.yaml
+│   ├── brain.py           ← Conexión Gemini API + system prompt desde prompts.yaml
 │   ├── memory.py          ← SQLAlchemy: historial por teléfono + deduplicación de eventos
 │   ├── tools.py           ← Herramientas específicas del negocio del usuario
 │   └── providers/
@@ -191,7 +195,7 @@ main.py — responde 200 AHORA y encola el trabajo en segundo plano
     ↓ ─────────────── (fuera del ciclo del webhook) ───────────────
 memory.py — recupera el historial de esa conversación
     ↓
-brain.py — llama a Claude con system prompt + historial + mensaje nuevo
+brain.py — llama a Gemini con system prompt + historial + mensaje nuevo
     ↓
 providers/ — envía la respuesta por el proveedor elegido
     ↓
@@ -205,12 +209,12 @@ contestar preguntas sin ejecutar nada.
 
 `tools.py` es otra cosa: es el lugar para las **acciones** (reservar una cita, confirmar un
 pedido, abrir un ticket). Hoy el agente generado **no las llama solo**: son funciones listas
-para usar, pero conectarlas al ciclo de tool use de Claude es un paso aparte. Si el usuario
-pide que el agente agende de verdad y no solo que hable de agendar, decíselo claro y armá esa
-parte con él en vez de dar por hecho que ya funciona.
+para usar, pero conectarlas al ciclo de tool use de Gemini (function calling) es un paso
+aparte. Si el usuario pide que el agente agende de verdad y no solo que hable de agendar,
+decíselo claro y armá esa parte con él en vez de dar por hecho que ya funciona.
 
 **Por qué se responde antes de procesar.** Los proveedores esperan un `2xx` en unos 5
-segundos. Llamar a Claude tarda más que eso. Si el agente procesa antes de contestar, el
+segundos. Llamar a Gemini tarda más que eso. Si el agente procesa antes de contestar, el
 proveedor asume que el webhook falló y reintenta el mismo evento — hasta 7 veces — y el
 cliente termina recibiendo la misma respuesta repetida. Por eso: **responder primero,
 trabajar después**, y deduplicar por id de evento.
@@ -315,14 +319,15 @@ PREGUNTA 7: ¿Tienes archivos con información de tu negocio?
                      Acepto: PDF, TXT, DOCX, CSV, imágenes, JSON, Markdown
             Si NO → Continuamos con lo que me has contado
 
-PREGUNTA 8: ¿Tienes tu Anthropic API Key?
+PREGUNTA 8: ¿Tienes tu Gemini API Key?
             Si SÍ → "Compártela, la guardaré de forma segura en tu .env"
             Si NO → Guiar paso a paso:
-                     1. Ve a platform.anthropic.com
-                     2. Crea una cuenta o inicia sesión
-                     3. Ve a Settings → API Keys
-                     4. Crea una nueva key y cópiala
-                     5. La key empieza con "sk-ant-..."
+                     1. Ve a aistudio.google.com/apikey
+                     2. Inicia sesión con tu cuenta de Google
+                     3. Click en "Create API key" (elige o crea un proyecto)
+                     4. Cópiala: no hace falta tarjeta de crédito, la capa gratuita
+                        ya queda activada
+                     5. La key es una cadena alfanumérica sin prefijo fijo
 
 PREGUNTA 9: ¿Cómo quieres conectar tu agente con WhatsApp?
 
@@ -1109,7 +1114,7 @@ async def webhook_handler(request: Request, tareas: BackgroundTasks):
     Contesta 200 de inmediato y procesa el mensaje en segundo plano.
 
     Esto NO es un detalle de estilo. Los proveedores esperan un 2xx en unos 5 segundos y,
-    si no lo reciben, reintentan el mismo evento hasta 7 veces. Como llamar a Claude tarda
+    si no lo reciben, reintentan el mismo evento hasta 7 veces. Como llamar a Gemini tarda
     mas que eso, procesar antes de contestar hace que el cliente reciba la misma respuesta
     repetida. Por eso: responder primero, trabajar despues.
     """
@@ -1192,46 +1197,40 @@ async def procesar_mensaje(msg: MensajeEntrante):
 #### 3.8 — `agent/brain.py`
 
 ```python
-# agent/brain.py — Cerebro del agente: conexion con Claude
+# agent/brain.py — Cerebro del agente: conexion con Gemini
 # Generado por AgentKit
 
 """
 Logica de IA del agente. Lee el system prompt de config/prompts.yaml y genera las
-respuestas con la API de Anthropic.
+respuestas con la API gratuita de Google Gemini (google-genai).
 """
 
 import logging
 import os
 
 import yaml
-from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
+from google import genai
+from google.genai import errors as genai_errors
+from google.genai import types
 
 load_dotenv()
 logger = logging.getLogger("agentkit")
 
-client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # El modelo se cambia desde .env, sin tocar el codigo.
-#   claude-opus-5     el mas capaz             $5 / $25 por millon de tokens
-#   claude-sonnet-5   el balanceado (default)  $3 / $15
-#   claude-haiku-4-5  el mas barato y rapido   $1 / $5
+#   gemini-2.5-pro         el mas capaz, sin capa gratuita
+#   gemini-2.5-flash       gratis, limites mas bajos
+#   gemini-2.5-flash-lite  el balanceado (default) — gratis, limites mas generosos
 # El "or" y no el default de os.getenv: una variable declarada vacia en el .env
 # devuelve "" y dejaria al agente sin modelo.
-MODELO = os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-5"
-
-# Es un bot de respuestas cortas: con esfuerzo bajo contesta mas rapido y mas barato.
-# Dejalo vacio en el .env para no mandar el parametro.
-ESFUERZO = os.getenv("ANTHROPIC_EFFORT", "low").strip()
+MODELO = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash-lite"
 
 # WhatsApp son mensajes cortos, pero este tope NO es solo la respuesta: en los modelos
-# actuales el razonamiento interno tambien cuenta contra el. Con el margen justo, una
-# pregunta que exija pensar un poco deja al agente sin espacio para contestar.
-MAX_TOKENS = int(os.getenv("ANTHROPIC_MAX_TOKENS") or "4096")
-
-# Los modelos mas viejos no aceptan output_config. Si la primera llamada falla por eso,
-# se reintenta sin el parametro y se recuerda para las siguientes.
-_soporta_esfuerzo = True
+# 2.5 el razonamiento interno ("thinking") tambien cuenta contra el. Con el margen justo,
+# una pregunta que exija pensar un poco deja al agente sin espacio para contestar.
+MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS") or "1024")
 
 
 def cargar_config_prompts() -> dict:
@@ -1268,33 +1267,28 @@ def obtener_mensaje_fallback() -> str:
 
 def _extraer_texto(respuesta) -> str:
     """
-    Junta el texto de la respuesta de Claude.
+    Junta el texto de la respuesta de Gemini.
 
-    Ojo: NO se puede hacer respuesta.content[0].text. La respuesta es una lista de
-    bloques y el primero no siempre es texto (los modelos que razonan devuelven
-    primero un bloque de pensamiento). Hay que filtrar por tipo.
+    Ojo: NO se puede asumir respuesta.text sin chequear. Si el modelo no devolvio
+    texto (por ejemplo, se corto por safety filters), response.text puede ser None
+    o lanzar; por eso se recorren los candidates/parts a mano.
     """
-    partes = [bloque.text for bloque in respuesta.content if bloque.type == "text"]
+    if not getattr(respuesta, "candidates", None):
+        return ""
+    partes = []
+    for candidato in respuesta.candidates:
+        contenido = getattr(candidato, "content", None)
+        if not contenido or not contenido.parts:
+            continue
+        for parte in contenido.parts:
+            if getattr(parte, "text", None):
+                partes.append(parte.text)
     return "\n".join(p for p in partes if p).strip()
-
-
-def _es_error_de_esfuerzo(error: Exception) -> bool:
-    """
-    True solo si el modelo rechazo la llamada POR el parametro output_config/effort.
-
-    Se exige que sea un 400 de peticion invalida y no cualquier error que mencione la
-    palabra: un 529 de sobrecarga que la nombre de paso no debe apagar el parametro
-    para todo el proceso.
-    """
-    if getattr(error, "status_code", None) != 400:
-        return False
-    texto = str(error).lower()
-    return "output_config" in texto or "effort" in texto
 
 
 async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, bool]:
     """
-    Genera una respuesta con Claude.
+    Genera una respuesta con Gemini.
 
     Args:
         mensaje: el mensaje nuevo del cliente
@@ -1308,58 +1302,54 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, b
         guardar esos avisos en el historial: si se guardaran, quedarian contaminando
         el contexto de todos los mensajes siguientes.
     """
-    global _soporta_esfuerzo
-
     if not mensaje or len(mensaje.strip()) < 2:
         return obtener_mensaje_fallback(), False
 
-    mensajes = [{"role": m["role"], "content": m["content"]} for m in historial]
-    mensajes.append({"role": "user", "content": mensaje})
-
-    system_prompt = cargar_system_prompt()
-    extras = {"output_config": {"effort": ESFUERZO}} if (_soporta_esfuerzo and ESFUERZO) else {}
-
-    async def _llamar(parametros_extra: dict):
-        return await client.messages.create(
-            model=MODELO,
-            max_tokens=MAX_TOKENS,
-            system=system_prompt,
-            messages=mensajes,
-            **parametros_extra,
+    # Gemini usa "model" donde nuestro historial usa "assistant"; el resto viaja igual.
+    contents = [
+        types.Content(
+            role="model" if m["role"] == "assistant" else "user",
+            parts=[types.Part.from_text(text=m["content"])],
         )
+        for m in historial
+    ]
+    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=mensaje)]))
+
+    config = types.GenerateContentConfig(
+        system_instruction=cargar_system_prompt(),
+        max_output_tokens=MAX_TOKENS,
+    )
 
     try:
-        respuesta = await _llamar(extras)
-    except Exception as e:  # noqa: BLE001
-        if extras and _es_error_de_esfuerzo(e):
-            logger.warning(
-                f"El modelo {MODELO} no acepta output_config.effort; se reintenta sin ese parametro."
-            )
-            _soporta_esfuerzo = False
-            try:
-                respuesta = await _llamar({})
-            except Exception as e2:  # noqa: BLE001
-                logger.error(f"Error llamando a Claude: {e2}")
-                return obtener_mensaje_error(), False
+        respuesta = await client.aio.models.generate_content(
+            model=MODELO, contents=contents, config=config
+        )
+    except genai_errors.ClientError as e:
+        if getattr(e, "code", None) == 429:
+            logger.error(f"Limite de la capa gratuita de Gemini alcanzado: {e}")
         else:
-            logger.error(f"Error llamando a Claude: {e}")
-            return obtener_mensaje_error(), False
+            logger.error(f"Error llamando a Gemini: {e}")
+        return obtener_mensaje_error(), False
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Error llamando a Gemini: {e}")
+        return obtener_mensaje_error(), False
 
-    if getattr(respuesta, "stop_reason", None) == "max_tokens":
+    candidato_0 = respuesta.candidates[0] if respuesta.candidates else None
+    if candidato_0 is not None and getattr(candidato_0, "finish_reason", None) == "MAX_TOKENS":
         logger.warning(
             f"La respuesta se corto por llegar al tope de {MAX_TOKENS} tokens. "
-            "Si pasa seguido, sube ANTHROPIC_MAX_TOKENS o acorta el system prompt."
+            "Si pasa seguido, sube GEMINI_MAX_TOKENS o acorta el system prompt."
         )
 
     texto = _extraer_texto(respuesta)
     if not texto:
-        logger.warning("Claude devolvio una respuesta sin texto")
+        logger.warning("Gemini devolvio una respuesta sin texto")
         return obtener_mensaje_fallback(), False
 
-    logger.info(
-        f"Respuesta generada con {MODELO} "
-        f"({respuesta.usage.input_tokens} in / {respuesta.usage.output_tokens} out)"
-    )
+    uso = getattr(respuesta, "usage_metadata", None)
+    entrada = getattr(uso, "prompt_token_count", "?") if uso else "?"
+    salida = getattr(uso, "candidates_token_count", "?") if uso else "?"
+    logger.info(f"Respuesta generada con {MODELO} ({entrada} in / {salida} out)")
     return texto, True
 ```
 
@@ -1524,7 +1514,7 @@ async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
 
     mensajes.reverse()  # vienen del mas nuevo al mas viejo: los damos vuelta
 
-    # La API de Claude exige que el historial empiece con un mensaje del usuario.
+    # Gemini exige que el historial empiece con un mensaje del usuario (role "user").
     # Si por un error anterior quedo un "assistant" suelto al principio, lo sacamos.
     while mensajes and mensajes[0].role != "user":
         mensajes.pop(0)
@@ -1554,9 +1544,10 @@ Herramientas especificas del negocio.
 OJO: estas funciones NO se ejecutan solas todavia. La informacion del negocio le llega
 al agente por el system prompt (config/prompts.yaml), asi que para CONTESTAR preguntas
 no hace falta nada de aca. Este archivo es el lugar para las ACCIONES —reservar, cobrar,
-abrir un ticket— y conectarlas al ciclo de tool use de Claude es un paso aparte.
+abrir un ticket— y conectarlas al ciclo de function calling de Gemini es un paso aparte.
 
-Claude Code genera las funciones segun los casos de uso elegidos en la entrevista.
+El asistente que arma tu agente genera las funciones segun los casos de uso elegidos
+en la entrevista.
 """
 
 import logging
@@ -1613,7 +1604,7 @@ def buscar_en_knowledge(consulta: str) -> str:
 
 
 # ════════════════════════════════════════════════════════════
-# Claude Code: agrega aqui las funciones especificas segun
+# Agrega aqui las funciones especificas segun
 # el caso de uso elegido por el usuario. Ejemplos:
 #
 # Si FAQ -> buscar_en_knowledge() ya esta listo arriba
@@ -1735,14 +1726,12 @@ Genera SOLO las variables del proveedor elegido. Las del otro no van, ni comenta
 # AgentKit — Variables de entorno
 # Generado por AgentKit — NO subir a GitHub
 
-# ── Anthropic ──────────────────────────────────────────────
-ANTHROPIC_API_KEY=sk-ant-...
-# claude-opus-5 | claude-sonnet-5 | claude-haiku-4-5
-ANTHROPIC_MODEL=claude-sonnet-5
-# Esfuerzo de razonamiento: low | medium | high. Vacio = no enviar el parametro.
-ANTHROPIC_EFFORT=low
-# Opcional, default 4096. El razonamiento interno cuenta contra este tope.
-# ANTHROPIC_MAX_TOKENS=4096
+# ── Gemini ─────────────────────────────────────────────────
+GEMINI_API_KEY=...
+# gemini-2.5-pro | gemini-2.5-flash | gemini-2.5-flash-lite
+GEMINI_MODEL=gemini-2.5-flash-lite
+# Opcional, default 1024. El razonamiento interno ("thinking") cuenta contra este tope.
+# GEMINI_MAX_TOKENS=1024
 
 # ── Proveedor de WhatsApp ──────────────────────────────────
 WHATSAPP_PROVIDER=zernio
@@ -1964,8 +1953,8 @@ Solo ejecutar si el usuario confirma que quiere hacer deploy.
 
    Paso 3: Variables de entorno
       En Railway → tu proyecto → Variables, agrega:
-      - ANTHROPIC_API_KEY   = [tu key]
-      - ANTHROPIC_MODEL     = claude-sonnet-5
+      - GEMINI_API_KEY      = [tu key]
+      - GEMINI_MODEL        = gemini-2.5-flash-lite
       - WHATSAPP_PROVIDER   = [zernio | meta]
       - ENVIRONMENT         = production
       - DATABASE_URL        = ${{Postgres.DATABASE_URL}}
@@ -2054,7 +2043,7 @@ Solo ejecutar si el usuario confirma que quiere hacer deploy.
 
    Lo que se construyó:
    - Servidor FastAPI con webhook de WhatsApp (firma verificada)
-   - Cerebro con Claude AI ([MODELO])
+   - Cerebro con Google Gemini ([MODELO])
    - Memoria de conversaciones por cliente
    - Deduplicación de eventos: nunca responde dos veces lo mismo
    - Herramientas base en tools.py: [LAS QUE REALMENTE ESCRIBISTE]
@@ -2078,7 +2067,7 @@ Solo ejecutar si el usuario confirma que quiere hacer deploy.
 
 ---
 
-## 6. Reglas de comportamiento para Claude Code
+## 6. Reglas de comportamiento para el asistente
 
 1. **Habla SIEMPRE en español** — todo: mensajes, comentarios en código, nombres de variables
 2. **UNA pregunta a la vez** — nunca bombardees al usuario con múltiples preguntas
@@ -2092,7 +2081,7 @@ Solo ejecutar si el usuario confirma que quiere hacer deploy.
 10. **Mantén simple**: no agregues features que el usuario no pidió
 11. **Valida en cada fase** antes de avanzar a la siguiente
 12. **Genera SOLO el adaptador del proveedor elegido** — no los dos
-13. **No cambies el modelo de Claude por tu cuenta** para ahorrar: es decisión del usuario
+13. **No cambies el modelo de Gemini por tu cuenta** para ahorrar: es decisión del usuario
 
 ---
 
@@ -2123,11 +2112,10 @@ python3 scripts/audit.py
 ## 8. Variables de entorno
 
 ```env
-# ── Anthropic ─────────────────────────────────────────────
-ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-sonnet-5     # claude-opus-5 | claude-sonnet-5 | claude-haiku-4-5
-ANTHROPIC_EFFORT=low                # low | medium | high — vacio para no enviarlo
-# ANTHROPIC_MAX_TOKENS=4096         # opcional, default 4096
+# ── Gemini ────────────────────────────────────────────────
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-2.5-flash-lite  # gemini-2.5-pro | gemini-2.5-flash | gemini-2.5-flash-lite
+# GEMINI_MAX_TOKENS=1024            # opcional, default 1024
 
 # ── Proveedor de WhatsApp (zernio | meta) ─────────────────
 WHATSAPP_PROVIDER=
