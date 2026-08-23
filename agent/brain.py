@@ -21,7 +21,7 @@ logger = logging.getLogger("agentkit")
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-MODELO = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash-lite"
+MODELO = os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
 MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS") or "1024")
 
 # Respaldo: si Gemini agota su cuota gratuita (429), se reintenta con OpenRouter.
