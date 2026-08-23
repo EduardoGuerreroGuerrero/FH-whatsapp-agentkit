@@ -24,7 +24,18 @@ logger = logging.getLogger("agentkit")
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 MODELO = os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
-MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS") or "1024")
+MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS") or "512")
+
+# En los modelos Gemini 3.x el razonamiento interno consume el mismo cupo que la respuesta.
+# Con un tope bajo el modelo se queda sin espacio pensando y devuelve texto vacio, y el
+# cliente termina recibiendo "no entendi tu mensaje". Bajar el esfuerzo de razonamiento
+# deja el cupo para el texto que se ve.
+#
+# Ojo: en gemini-3.5-flash-lite `thinking_budget=0` no existe (devuelve 400), el campo que
+# funciona es `thinking_level`. Como no todas las versiones del SDK ni todos los modelos lo
+# aceptan, se detecta en caliente y se recuerda la respuesta.
+NIVEL_RAZONAMIENTO = os.getenv("GEMINI_THINKING_LEVEL") or "low"
+_razonamiento_soportado: bool | None = None
 
 # Respaldo: si Gemini agota su cuota gratuita (429), se reintenta con OpenRouter.
 # OPENROUTER_API_KEY es opcional; si no esta configurada, el respaldo simplemente no se usa.
@@ -59,6 +70,15 @@ def obtener_mensaje_error() -> str:
     return cargar_config_prompts().get(
         "error_message",
         "Lo siento, estoy teniendo problemas tecnicos. Por favor intenta de nuevo en unos minutos.",
+    )
+
+
+def obtener_mensaje_tipo_no_soportado() -> str:
+    """Que decirle al cliente que manda audio, foto o cualquier cosa que no sea texto."""
+    return cargar_config_prompts().get(
+        "unsupported_type_message",
+        "Por ahora solo puedo leer mensajes de texto. Escribeme lo que necesitas y con gusto "
+        "te ayudo. Mira nuestro menu en www.fruppyhelados.com",
     )
 
 
@@ -161,6 +181,67 @@ def _es_solicitud_numero_pago(mensaje: str) -> bool:
     return bool(_PATRONES_NUMERO_PAGO.search(mensaje))
 
 
+def _construir_config(system_instruction: str, max_tokens: int) -> types.GenerateContentConfig:
+    """Arma la config de Gemini, con el razonamiento bajo si el SDK lo soporta."""
+    parametros = {
+        "system_instruction": system_instruction,
+        "max_output_tokens": max_tokens,
+    }
+    if _razonamiento_soportado is not False:
+        try:
+            parametros["thinking_config"] = types.ThinkingConfig(
+                thinking_level=NIVEL_RAZONAMIENTO
+            )
+        except Exception:  # noqa: BLE001
+            # El SDK instalado no conoce thinking_level: se sigue sin el.
+            pass
+    return types.GenerateContentConfig(**parametros)
+
+
+async def _llamar_modelo(contents: list, system_instruction: str, max_tokens: int):
+    """
+    Llama a Gemini y, si el modelo rechaza el thinking_level, reintenta una vez sin el.
+    La decision se recuerda para no pagar el reintento en cada mensaje.
+    """
+    global _razonamiento_soportado
+
+    try:
+        respuesta = await client.aio.models.generate_content(
+            model=MODELO,
+            contents=contents,
+            config=_construir_config(system_instruction, max_tokens),
+        )
+    except genai_errors.ClientError as e:
+        rechazo_por_razonamiento = (
+            _razonamiento_soportado is None
+            and getattr(e, "code", None) == 400
+            and "thinking" in str(e).lower()
+        )
+        if not rechazo_por_razonamiento:
+            raise
+        logger.warning(
+            f"El modelo {MODELO} no acepta thinking_level; se sigue sin configurarlo"
+        )
+        _razonamiento_soportado = False
+        respuesta = await client.aio.models.generate_content(
+            model=MODELO,
+            contents=contents,
+            config=_construir_config(system_instruction, max_tokens),
+        )
+
+    if _razonamiento_soportado is None:
+        _razonamiento_soportado = True
+    return respuesta
+
+
+def _se_corto_por_tokens(respuesta) -> bool:
+    """True si el modelo se quedo sin cupo antes de terminar."""
+    candidatos = getattr(respuesta, "candidates", None)
+    if not candidatos:
+        return False
+    return str(getattr(candidatos[0], "finish_reason", "")).endswith("MAX_TOKENS")
+
+
 def _extraer_texto(respuesta) -> str:
     """
     Junta el texto de la respuesta de Gemini.
@@ -197,13 +278,10 @@ async def _es_sobre_negocio(mensaje: str, historial: list[dict]) -> bool:
             + "\n".join(lineas)
             + "\n\nRespuesta (SI o NO):"
         )
-        respuesta = await client.aio.models.generate_content(
-            model=MODELO,
-            contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
-            config=types.GenerateContentConfig(
-                system_instruction="Eres un clasificador estricto. Responde SI o NO.",
-                max_output_tokens=10,
-            ),
+        respuesta = await _llamar_modelo(
+            [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
+            "Eres un clasificador estricto. Responde SI o NO.",
+            24,
         )
         texto = _extraer_texto(respuesta).upper().strip().rstrip(".")
         return not ("NO" in texto and "SI" not in texto)
@@ -288,15 +366,10 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, b
     ]
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=mensaje)]))
 
-    config = types.GenerateContentConfig(
-        system_instruction=cargar_system_prompt(),
-        max_output_tokens=MAX_TOKENS,
-    )
+    system_prompt = cargar_system_prompt()
 
     try:
-        respuesta = await client.aio.models.generate_content(
-            model=MODELO, contents=contents, config=config
-        )
+        respuesta = await _llamar_modelo(contents, system_prompt, MAX_TOKENS)
     except genai_errors.ClientError as e:
         if getattr(e, "code", None) == 429:
             logger.error(f"Limite de la capa gratuita de Gemini alcanzado: {e}")
@@ -313,14 +386,28 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, b
             return texto_respaldo, True
         return obtener_mensaje_error(), False
 
-    candidato_0 = respuesta.candidates[0] if respuesta.candidates else None
-    if candidato_0 is not None and getattr(candidato_0, "finish_reason", None) == "MAX_TOKENS":
+    texto = _extraer_texto(respuesta)
+
+    if not texto and _se_corto_por_tokens(respuesta):
+        # Se quedo sin cupo antes de escribir nada (normalmente por el razonamiento interno).
+        # Vale la pena un intento mas con el doble de espacio antes de rendirse: la
+        # alternativa es contestarle "no entendi" a un cliente que se explico bien.
         logger.warning(
-            f"La respuesta se corto por llegar al tope de {MAX_TOKENS} tokens. "
+            f"La respuesta se corto en {MAX_TOKENS} tokens sin texto; "
+            f"se reintenta con {MAX_TOKENS * 2}"
+        )
+        try:
+            respuesta = await _llamar_modelo(contents, system_prompt, MAX_TOKENS * 2)
+            texto = _extraer_texto(respuesta)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"El reintento con mas tokens tambien fallo: {e}")
+
+    if _se_corto_por_tokens(respuesta):
+        logger.warning(
+            f"La respuesta se corto por llegar al tope de tokens. "
             "Si pasa seguido, sube GEMINI_MAX_TOKENS o acorta el system prompt."
         )
 
-    texto = _extraer_texto(respuesta)
     if not texto:
         logger.warning("Gemini devolvio una respuesta sin texto")
         return obtener_mensaje_fallback(), False

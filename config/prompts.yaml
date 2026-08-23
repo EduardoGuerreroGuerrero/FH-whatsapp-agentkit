@@ -154,4 +154,5 @@ off_topic_message: "Ese tema no esta dentro de lo que te puedo ayudar en Fruppy 
 payment_number_message: "Nequi / llave: 3045686743. Cuando hagas el pago, confirmanos para que nuestro equipo revise la transaccion y te informe."
 payment_confirmation_message: "¡Perfecto! 📱 Nuestro equipo revisara la transaccion y te informaremos cuanto antes. ¡Gracias por tu compra! ✨"
 fallback_message: "Disculpa, no entendi tu mensaje. ¿Podrias reformularlo?"
+unsupported_type_message: "Por ahora solo puedo leer mensajes de texto 🙏 Escribeme lo que necesitas y con gusto te ayudo. Mira nuestro menu en www.fruppyhelados.com 🍦"
 error_message: "Lo siento, estoy teniendo problemas tecnicos. Por favor intenta de nuevo en unos minutos."

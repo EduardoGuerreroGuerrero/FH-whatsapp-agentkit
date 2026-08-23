@@ -135,7 +135,56 @@ y una cuenta de Facebook Business verificada.
 - Versión de la Graph API por default: `v25.0` (configurable con `META_API_VERSION`)
 - La firma del webhook viaja en `X-Hub-Signature-256` con el formato `sha256=<hex>`
 
-### 3.3 La ventana de 24 horas
+**Campos del webhook que usa el agente:**
+
+```
+entry[].changes[].value.messages[].from            teléfono E.164 sin "+" — PUEDE FALTAR
+entry[].changes[].value.messages[].from_user_id    BSUID, p. ej. "CO.1744031683476064"
+entry[].changes[].value.messages[].id              wamid, se usa para deduplicar
+entry[].changes[].value.messages[].type            "text" | "audio" | "image" | ...
+entry[].changes[].value.contacts[].wa_id           teléfono, mismo caso que "from"
+entry[].changes[].value.contacts[].user_id         BSUID
+entry[].changes[].value.statuses[]                 sent / delivered / read / failed
+```
+
+### 3.3 BSUID: el teléfono del cliente ya no siempre viene
+
+Desde **abril de 2026** Meta despliega los *business-scoped user IDs* (BSUID) como paso
+previo a los nombres de usuario de WhatsApp. Consecuencia directa: **`messages[].from`
+puede no venir**, y en su lugar llega `messages[].from_user_id` con un identificador
+opaco con formato `{código de país ISO 3166}.{hasta 128 alfanuméricos}`, por ejemplo
+`CO.1744031683476064`. Los BSUID "padre" llevan `ENT` en el medio: `CO.ENT.118157992128`.
+
+Meta solo incluye el teléfono si se cumple alguna de estas condiciones, evaluadas **por
+número de negocio**:
+
+- le escribiste o llamaste a ese teléfono en los últimos 30 días
+- recibiste mensaje o llamada de ese teléfono en los últimos 30 días
+- el usuario está en tu *contact book* de Meta
+
+Por eso un agente recién puesto en producción parece funcionar: responde al dueño y a los
+que ya habían escrito, y deja en silencio a todos los clientes nuevos.
+
+**Reglas que hay que respetar al construir el adaptador:**
+
+| Situación | Qué hacer |
+|---|---|
+| Llega `from` | Responder con `"to": "<teléfono>"` |
+| Llega solo `from_user_id` | Responder con `"recipient": "<BSUID>"` + `"recipient_type": "individual"` |
+| Llegan los dos | Usar el teléfono: así Meta lo sigue mandando en los webhooks siguientes |
+| Nunca | Mandar `to` y `recipient` juntos (`to` tiene precedencia) ni un BSUID dentro de `to` (error `131009`) |
+
+La llave del historial debe ser el **BSUID cuando existe**, porque viene en todos los
+webhooks y es estable. El teléfono es solo un dato de contacto: puede aparecer y
+desaparecer entre un mensaje y el siguiente del mismo cliente.
+
+Documentación: https://developers.facebook.com/documentation/business-messaging/whatsapp/business-scoped-user-ids/
+
+**`HTTP 200` de Meta no significa entregado.** Solo significa que aceptó la petición. La
+entrega real llega por el array `statuses` del webhook (`sent`, `delivered`, `read`,
+`failed`). Si el adaptador no lo registra, un mensaje que Meta descarta es invisible.
+
+### 3.4 La ventana de 24 horas
 
 WhatsApp solo deja mandar mensajes de texto libre dentro de las 24 horas posteriores al
 último mensaje del cliente. Fuera de esa ventana hay que usar una plantilla aprobada por Meta.

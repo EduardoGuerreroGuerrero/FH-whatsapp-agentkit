@@ -2,8 +2,11 @@
 # Generado por AgentKit
 
 """
-Guarda el historial de cada conversacion por numero de telefono, y lleva registro de
+Guarda el historial de cada conversacion por identidad del cliente, y lleva registro de
 que eventos de webhook ya se atendieron.
+
+La identidad canonica es el BSUID de Meta cuando existe, y el telefono cuando no. Ver
+`agent/providers/base.py` para el porque.
 
 SQLite en local, PostgreSQL en produccion.
 """
@@ -13,7 +16,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
-from sqlalchemy import DateTime, Integer, String, Text, delete, select
+from sqlalchemy import DateTime, Integer, String, Text, delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -53,10 +56,27 @@ class Mensaje(Base):
     __tablename__ = "mensajes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    telefono: Mapped[str] = mapped_column(String(50), index=True)
+    # La columna se sigue llamando "telefono" por compatibilidad con los datos que ya
+    # estan en produccion, pero guarda la IDENTIDAD canonica: el BSUID si existe.
+    telefono: Mapped[str] = mapped_column(String(140), index=True)
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[str] = mapped_column(Text)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=ahora)
+
+
+class Identidad(Base):
+    """
+    Par BSUID <-> telefono de un mismo cliente.
+
+    Sirve para dos cosas: saber que ya se fusiono su historial, y dejar rastro de la
+    correspondencia entre las dos identidades que usa Meta.
+    """
+
+    __tablename__ = "identidades"
+
+    bsuid: Mapped[str] = mapped_column(String(140), primary_key=True)
+    telefono: Mapped[str | None] = mapped_column(String(50), index=True, nullable=True)
+    actualizado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=ahora)
 
 
 class EventoProcesado(Base):
@@ -73,9 +93,52 @@ class EventoProcesado(Base):
 
 
 async def inicializar_db():
-    """Crea las tablas si no existen."""
+    """Crea las tablas si no existen y ajusta las columnas que cambiaron de tamano."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        # La columna "telefono" nacio como VARCHAR(50) y ahora tambien guarda BSUIDs, que
+        # pueden llegar a 131 caracteres. create_all no modifica tablas existentes, asi que
+        # el ensanche va aparte. SQLite ignora los limites de longitud, no hace falta.
+        if DATABASE_URL.startswith("postgresql"):
+            await conn.exec_driver_sql(
+                "ALTER TABLE mensajes ALTER COLUMN telefono TYPE VARCHAR(140)"
+            )
+
+
+async def vincular_identidad(bsuid: str | None, telefono: str | None):
+    """
+    Registra que un BSUID y un telefono son el mismo cliente y fusiona su historial.
+
+    La primera vez que Meta manda las dos identidades juntas, los mensajes que quedaron
+    guardados bajo el telefono se pasan al BSUID. Asi el cliente no arranca de cero cuando
+    Meta deja de enviar su numero. Es idempotente: la segunda vez no hace nada.
+    """
+    if not bsuid or not telefono:
+        return
+
+    async with async_session() as session:
+        ya_vinculado = await session.get(Identidad, bsuid)
+        if ya_vinculado is not None and ya_vinculado.telefono == telefono:
+            return
+
+        resultado = await session.execute(
+            update(Mensaje).where(Mensaje.telefono == telefono).values(telefono=bsuid)
+        )
+
+        if ya_vinculado is None:
+            session.add(Identidad(bsuid=bsuid, telefono=telefono, actualizado_en=ahora()))
+        else:
+            ya_vinculado.telefono = telefono
+            ya_vinculado.actualizado_en = ahora()
+
+        await session.commit()
+
+    if resultado.rowcount:
+        logger.info(
+            f"Historial fusionado: {resultado.rowcount} mensajes de {telefono} "
+            f"ahora estan bajo {bsuid}"
+        )
 
 
 async def marcar_evento_procesado(evento_id: str) -> bool:
@@ -116,19 +179,19 @@ async def limpiar_eventos_viejos(dias: int = 7):
         logger.info(f"Se limpiaron {resultado.rowcount} eventos de mas de {dias} dias")
 
 
-async def guardar_mensaje(telefono: str, role: str, content: str):
+async def guardar_mensaje(identidad: str, role: str, content: str):
     """Guarda un mensaje en el historial de esa conversacion."""
     async with async_session() as session:
-        session.add(Mensaje(telefono=telefono, role=role, content=content, timestamp=ahora()))
+        session.add(Mensaje(telefono=identidad, role=role, content=content, timestamp=ahora()))
         await session.commit()
 
 
-async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
+async def obtener_historial(identidad: str, limite: int = 20) -> list[dict]:
     """Devuelve los ultimos N mensajes de una conversacion, en orden cronologico."""
     async with async_session() as session:
         resultado = await session.execute(
             select(Mensaje)
-            .where(Mensaje.telefono == telefono)
+            .where(Mensaje.telefono == identidad)
             .order_by(Mensaje.id.desc())
             .limit(limite)
         )
@@ -142,8 +205,8 @@ async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
     return [{"role": m.role, "content": m.content} for m in mensajes]
 
 
-async def limpiar_historial(telefono: str):
+async def limpiar_historial(identidad: str):
     """Borra todo el historial de una conversacion."""
     async with async_session() as session:
-        await session.execute(delete(Mensaje).where(Mensaje.telefono == telefono))
+        await session.execute(delete(Mensaje).where(Mensaje.telefono == identidad))
         await session.commit()

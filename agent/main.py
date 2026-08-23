@@ -16,7 +16,11 @@ from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
-from agent.brain import generar_respuesta, obtener_mensaje_error
+from agent.brain import (
+    generar_respuesta,
+    obtener_mensaje_error,
+    obtener_mensaje_tipo_no_soportado,
+)
 from agent.memory import (
     guardar_mensaje,
     inicializar_db,
@@ -24,6 +28,7 @@ from agent.memory import (
     limpiar_eventos_viejos,
     marcar_evento_procesado,
     obtener_historial,
+    vincular_identidad,
 )
 from agent.providers import obtener_proveedor
 from agent.providers.base import MensajeEntrante
@@ -124,7 +129,12 @@ async def webhook_handler(request: Request, tareas: BackgroundTasks):
 
     encolados = 0
     for msg in mensajes:
-        if msg.es_propio or not msg.texto.strip():
+        if msg.es_propio:
+            continue
+
+        # Un mensaje de texto vacio no tiene nada que responder; uno de otro tipo (audio,
+        # imagen) llega sin texto a proposito y si merece respuesta.
+        if msg.tipo == "text" and not msg.texto.strip():
             continue
 
         evento_id = msg.contexto.get("evento_id") or msg.mensaje_id
@@ -132,7 +142,13 @@ async def webhook_handler(request: Request, tareas: BackgroundTasks):
             logger.info(f"Evento repetido, se ignora: {evento_id}")
             continue
 
-        logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
+        await vincular_identidad(msg.bsuid, msg.telefono)
+
+        logger.info(
+            f"Mensaje de {msg.identidad} "
+            f"(tel={msg.telefono or '-'} bsuid={msg.bsuid or '-'} tipo={msg.tipo}): "
+            f"{msg.texto or '<sin texto>'}"
+        )
         tareas.add_task(procesar_mensaje, msg)
         encolados += 1
 
@@ -143,28 +159,37 @@ async def procesar_mensaje(msg: MensajeEntrante):
     """Genera la respuesta y la manda de vuelta."""
     evento_id = msg.contexto.get("evento_id") or msg.mensaje_id
 
-    async with _candados[msg.telefono]:
+    async with _candados[msg.identidad]:
         try:
-            historial = await obtener_historial(msg.telefono)
-            respuesta, es_respuesta_real = await generar_respuesta(msg.texto, historial)
+            if msg.tipo != "text":
+                # Audio, imagen, sticker, ubicacion: el modelo no los procesa, pero dejar al
+                # cliente sin respuesta es peor que decirle que solo se lee texto.
+                respuesta, es_respuesta_real = obtener_mensaje_tipo_no_soportado(), False
+            else:
+                historial = await obtener_historial(msg.identidad)
+                respuesta, es_respuesta_real = await generar_respuesta(msg.texto, historial)
 
-            enviado = await proveedor.enviar_mensaje(msg.telefono, respuesta, msg.contexto)
+            enviado = await proveedor.enviar_mensaje(msg.identidad, respuesta, msg.contexto)
 
             if not enviado:
-                logger.error(f"No se pudo enviar la respuesta a {msg.telefono}; se libera el evento")
+                logger.error(
+                    f"No se pudo enviar la respuesta a {msg.identidad}; se libera el evento"
+                )
                 await liberar_evento(evento_id)
                 return
 
             if es_respuesta_real:
-                await guardar_mensaje(msg.telefono, "user", msg.texto)
-                await guardar_mensaje(msg.telefono, "assistant", respuesta)
+                await guardar_mensaje(msg.identidad, "user", msg.texto)
+                await guardar_mensaje(msg.identidad, "assistant", respuesta)
 
-            logger.info(f"Respuesta enviada a {msg.telefono}: {respuesta}")
+            logger.info(f"Respuesta enviada a {msg.identidad}: {respuesta}")
 
         except Exception as e:  # noqa: BLE001
-            logger.exception(f"Error procesando el mensaje de {msg.telefono}: {e}")
+            logger.exception(f"Error procesando el mensaje de {msg.identidad}: {e}")
             await liberar_evento(evento_id)
             try:
-                await proveedor.enviar_mensaje(msg.telefono, obtener_mensaje_error(), msg.contexto)
+                await proveedor.enviar_mensaje(
+                    msg.identidad, obtener_mensaje_error(), msg.contexto
+                )
             except Exception:  # noqa: BLE001
                 logger.error("Tampoco se pudo avisarle al cliente del error")
