@@ -151,5 +151,7 @@ system_prompt: |
 
 greeting_message: "¡Hola! 🍦 Bienvenido a Fruppy Helados. Mira nuestro menu: www.fruppyhelados.com. ¿Que te provoca pedir hoy? 🍓✨"
 off_topic_message: "Ese tema no esta dentro de lo que te puedo ayudar en Fruppy Helados. Solo te respondo cosas de la heladeria. Mira nuestro menu en www.fruppyhelados.com 🍦"
+payment_number_message: "Nequi / llave: 3045686743. Cuando hagas el pago, confirmanos para que nuestro equipo revise la transaccion y te informe."
+payment_confirmation_message: "¡Perfecto! 📱 Nuestro equipo revisara la transaccion y te informaremos cuanto antes. ¡Gracias por tu compra! ✨"
 fallback_message: "Disculpa, no entendi tu mensaje. ¿Podrias reformularlo?"
 error_message: "Lo siento, estoy teniendo problemas tecnicos. Por favor intenta de nuevo en unos minutos."

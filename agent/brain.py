@@ -85,13 +85,28 @@ def obtener_mensaje_fuera_de_tema() -> str:
     )
 
 
+def obtener_mensaje_numero_pago() -> str:
+    """Frase exacta cuando el cliente pide el numero de Nequi o llave."""
+    return cargar_config_prompts().get(
+        "payment_number_message",
+        "Nequi / llave: 3045686743. Cuando hagas el pago, confirmanos para que nuestro equipo revise la transaccion y te informe.",
+    )
+
+
+def obtener_mensaje_confirmacion_pago() -> str:
+    """Frase exacta cuando el cliente confirma que ya pago."""
+    return cargar_config_prompts().get(
+        "payment_confirmation_message",
+        "¡Perfecto! 📱 Nuestro equipo revisara la transaccion y te informaremos cuanto antes. ¡Gracias por tu compra! ✨",
+    )
+
+
 _SALUDOS = {
     "hola",
     "buenas",
     "buenos dias",
     "buenas tardes",
     "buenas noches",
-    "buen dia",
     "buen dia",
     "que mas",
     "q mas",
@@ -108,6 +123,18 @@ _SALUDOS = {
 }
 
 
+_PATRONES_CONFIRMACION_PAGO = re.compile(
+    r"\b(ya?\s*pague?|pago\s*(hecho|confirmado|realizado|listo)|ya\s*(transfiri|transferi|hice\s*el\s*pago|hice\s*la\s*transferencia|pague\s*por|transferi\s*por)|transferencia\s*(hecha|realizada)|ya\s*cancele|pago\s*cancele|pague\s*por\s*(nequi|llave))\b",
+    re.IGNORECASE,
+)
+
+
+_PATRONES_NUMERO_PAGO = re.compile(
+    r"\b(numero\s*de\s*nequi|nequi\s*numero|cual\s*es\s*(la\s*)?llave|dame\s*(el\s*)?nequi|dame\s*(la\s*)?llave|pago\s*por\s*nequi|pago\s*con\s*nequi|numero\s*(de\s*)?(pago|llave))\b",
+    re.IGNORECASE,
+)
+
+
 def _normalizar(texto: str) -> str:
     """Quita acentos, pasa a minusculas y elimina signos de puntuacion y emojis decorativos."""
     texto = unicodedata.normalize("NFD", texto)
@@ -122,6 +149,16 @@ def _es_saludo(mensaje: str) -> bool:
     if not limpio:
         return False
     return limpio in _SALUDOS
+
+
+def _es_confirmacion_pago(mensaje: str) -> bool:
+    """Detecta frases tipo 'ya pague', 'pago hecho', etc."""
+    return bool(_PATRONES_CONFIRMACION_PAGO.search(mensaje))
+
+
+def _es_solicitud_numero_pago(mensaje: str) -> bool:
+    """Detecta frases como 'numero de nequi', 'cual es la llave', etc."""
+    return bool(_PATRONES_NUMERO_PAGO.search(mensaje))
 
 
 def _extraer_texto(respuesta) -> str:
@@ -232,7 +269,13 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, b
     if _es_saludo(mensaje):
         return obtener_mensaje_saludo(), True
 
-    # 2. Verificar que la consulta sea del negocio. Si no, frase de rechazo exacta.
+    # 2. Pago: confirmaciones y solicitud del numero/llave, frases exactas.
+    if _es_confirmacion_pago(mensaje):
+        return obtener_mensaje_confirmacion_pago(), True
+    if _es_solicitud_numero_pago(mensaje):
+        return obtener_mensaje_numero_pago(), True
+
+    # 3. Verificar que la consulta sea del negocio. Si no, frase de rechazo exacta.
     if not await _es_sobre_negocio(mensaje, historial):
         return obtener_mensaje_fuera_de_tema(), True
 
