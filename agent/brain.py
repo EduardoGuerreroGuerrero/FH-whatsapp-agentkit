@@ -8,6 +8,8 @@ respuestas con la API gratuita de Google Gemini (google-genai).
 
 import logging
 import os
+import re
+import unicodedata
 
 import httpx
 import yaml
@@ -67,6 +69,61 @@ def obtener_mensaje_fallback() -> str:
     )
 
 
+def obtener_mensaje_saludo() -> str:
+    """Saludo fijo para la primera interaccion o cualquier saludo del cliente."""
+    return cargar_config_prompts().get(
+        "greeting_message",
+        "¡Hola! 🍦 Bienvenido a Fruppy Helados. Mira nuestro menu: www.fruppyhelados.com. ¿Que te provoca pedir hoy? 🍓✨",
+    )
+
+
+def obtener_mensaje_fuera_de_tema() -> str:
+    """Frase exacta cuando el cliente pregunta algo ajeno a la heladeria."""
+    return cargar_config_prompts().get(
+        "off_topic_message",
+        "Ese tema no esta dentro de lo que te puedo ayudar en Fruppy Helados. Solo te respondo cosas de la heladeria. Mira nuestro menu en www.fruppyhelados.com 🍦",
+    )
+
+
+_SALUDOS = {
+    "hola",
+    "buenas",
+    "buenos dias",
+    "buenas tardes",
+    "buenas noches",
+    "buen dia",
+    "buen dia",
+    "que mas",
+    "q mas",
+    "que hubo",
+    "q hubo",
+    "saludos",
+    "hey",
+    "holi",
+    "hello",
+    "hola buenas",
+    "hola buenos dias",
+    "hola buenas tardes",
+    "hola buenas noches",
+}
+
+
+def _normalizar(texto: str) -> str:
+    """Quita acentos, pasa a minusculas y elimina signos de puntuacion y emojis decorativos."""
+    texto = unicodedata.normalize("NFD", texto)
+    texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
+    texto = re.sub(r"[^\w\s]", "", texto)
+    return " ".join(texto.strip().lower().split())
+
+
+def _es_saludo(mensaje: str) -> bool:
+    """Detecta si el mensaje es solo un saludo, para responder con el saludo fijo."""
+    limpio = _normalizar(mensaje)
+    if not limpio:
+        return False
+    return limpio in _SALUDOS
+
+
 def _extraer_texto(respuesta) -> str:
     """
     Junta el texto de la respuesta de Gemini.
@@ -82,6 +139,40 @@ def _extraer_texto(respuesta) -> str:
             if getattr(parte, "text", None):
                 partes.append(parte.text)
     return "\n".join(p for p in partes if p).strip()
+
+
+async def _es_sobre_negocio(mensaje: str, historial: list[dict]) -> bool:
+    """
+    Clasificador rapido SI/NO. Pregunta a Gemini si la consulta es del negocio.
+    Devuelve True a menos que el modelo responda rotundamente NO.
+    """
+    try:
+        lineas = []
+        for m in historial[-6:]:
+            quien = "Cliente" if m["role"] == "user" else "Fruppy"
+            lineas.append(f"{quien}: {m['content']}")
+        lineas.append(f"Cliente: {mensaje}")
+        prompt = (
+            "Responde UNICAMENTE 'SI' o 'NO'. No justifiques. "
+            "¿La ULTIMA consulta del cliente esta relacionada con Fruppy Helados "
+            "(heladeria/fruteria de Barranquilla), su menu, precios, productos, "
+            "pedidos, horario, ubicacion, delivery, metodos de pago o redes sociales?\n\n"
+            + "\n".join(lineas)
+            + "\n\nRespuesta (SI o NO):"
+        )
+        respuesta = await client.aio.models.generate_content(
+            model=MODELO,
+            contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
+            config=types.GenerateContentConfig(
+                system_instruction="Eres un clasificador estricto. Responde SI o NO.",
+                max_output_tokens=10,
+            ),
+        )
+        texto = _extraer_texto(respuesta).upper().strip().rstrip(".")
+        return not ("NO" in texto and "SI" not in texto)
+    except Exception as e:
+        logger.warning(f"No se pudo clasificar la pregunta, se asume que es del negocio: {e}")
+        return True
 
 
 async def _generar_respuesta_openrouter(mensaje: str, historial: list[dict]) -> str | None:
@@ -136,6 +227,14 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, b
     """
     if not mensaje or len(mensaje.strip()) < 2:
         return obtener_mensaje_fallback(), False
+
+    # 1. Saludos: respuesta fija exacta, sin gastar llamada al LLM.
+    if _es_saludo(mensaje):
+        return obtener_mensaje_saludo(), True
+
+    # 2. Verificar que la consulta sea del negocio. Si no, frase de rechazo exacta.
+    if not await _es_sobre_negocio(mensaje, historial):
+        return obtener_mensaje_fuera_de_tema(), True
 
     contents = [
         types.Content(

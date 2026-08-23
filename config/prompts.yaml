@@ -138,5 +138,7 @@ system_prompt: |
   - Si piden un pedido, confirma cada item con precio y da el total
   - Si no sabes si un producto esta disponible, di que lo confirmaras y no asegures stock
 
+greeting_message: "¡Hola! 🍦 Bienvenido a Fruppy Helados. Mira nuestro menu: www.fruppyhelados.com. ¿Que te provoca pedir hoy? 🍓✨"
+off_topic_message: "Ese tema no esta dentro de lo que te puedo ayudar en Fruppy Helados. Solo te respondo cosas de la heladeria. Mira nuestro menu en www.fruppyhelados.com 🍦"
 fallback_message: "Disculpa, no entendi tu mensaje. ¿Podrias reformularlo?"
 error_message: "Lo siento, estoy teniendo problemas tecnicos. Por favor intenta de nuevo en unos minutos."
