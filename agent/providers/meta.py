@@ -95,9 +95,16 @@ class ProveedorMeta(ProveedorWhatsApp):
                 for msg in value.get("messages", []):
                     if msg.get("type") != "text":
                         continue  # por ahora solo texto
+                    telefono = msg.get("from", "")
+                    if not telefono:
+                        # Meta a veces manda mensajes sin "from" (payloads raros, mensajes
+                        # de sistema, etc). Sin telefono no hay forma de responder, asi que
+                        # se descarta aca y no se gasta una llamada a Gemini en vano.
+                        logger.warning(f"Mensaje sin 'from', se descarta: {msg}")
+                        continue
                     mensajes.append(
                         MensajeEntrante(
-                            telefono=msg.get("from", ""),
+                            telefono=telefono,
                             texto=(msg.get("text") or {}).get("body", ""),
                             mensaje_id=msg.get("id", ""),
                             # Meta solo entrega mensajes entrantes por este canal
