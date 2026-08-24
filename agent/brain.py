@@ -18,6 +18,8 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 
+from agent.horario import es_antes_de_abrir, esta_abierto
+
 load_dotenv()
 logger = logging.getLogger("agentkit")
 
@@ -102,6 +104,22 @@ def obtener_mensaje_fuera_de_tema() -> str:
     return cargar_config_prompts().get(
         "off_topic_message",
         "Ese tema no esta dentro de lo que te puedo ayudar en Fruppy Helados. Solo te respondo cosas de la heladeria. Mira nuestro menu en www.fruppyhelados.com 🍦",
+    )
+
+
+def obtener_mensaje_fuera_de_horario() -> str:
+    """Frase fija cuando el negocio esta cerrado, segun sea antes de abrir o despues de cerrar."""
+    config = cargar_config_prompts()
+    if es_antes_de_abrir():
+        return config.get(
+            "closed_before_message",
+            "¡Buenos dias! ☀️ Aun no abrimos. Nuestro horario es de 9am a 9pm. "
+            "Desde las 9am te atendemos con todo gusto.",
+        )
+    return config.get(
+        "closed_after_message",
+        "Por ahora estamos cerrados 🌙 Nuestro horario es de 9am a 9pm todos los dias. "
+        "Manana desde las 9am te atendemos con gusto.",
     )
 
 
@@ -353,7 +371,14 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, b
     if _es_solicitud_numero_pago(mensaje):
         return obtener_mensaje_numero_pago(), True
 
-    # 3. Verificar que la consulta sea del negocio. Si no, frase de rechazo exacta.
+    # 3. Fuera del horario de atencion no se llama al modelo: el ni sabe que hora es y
+    #    terminaba aceptando pedidos a medianoche. Va despues de los avisos de pago para
+    #    no dejar colgado a quien pago justo antes de cerrar.
+    if not esta_abierto():
+        logger.info("Mensaje recibido fuera del horario de atencion; no se llama al modelo")
+        return obtener_mensaje_fuera_de_horario(), False
+
+    # 4. Verificar que la consulta sea del negocio. Si no, frase de rechazo exacta.
     if not await _es_sobre_negocio(mensaje, historial):
         return obtener_mensaje_fuera_de_tema(), True
 

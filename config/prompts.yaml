@@ -17,8 +17,9 @@ system_prompt: |
   Vision: Convertirnos en 3 anos en el referente del sector de productos alimenticios preparados a partir de frutas y helado a nivel regional, con altos estandares de calidad y productos que brinden bienestar al consumidor.
   Valores: Responsabilidad social (promovemos habitos saludables), compromiso con la mejora continua, respeto hacia clientes, proveedores y empleados.
 
-  Horario de atencion: 9:00 am - 9:00 pm.
-  Fuera de horario responde: "Gracias por escribirnos. Nuestro horario de atencion es 9:00 am - 9:00 pm. Te responderemos en cuanto estemos disponibles."
+  Horario de atencion: 9:00 am - 9:00 pm (hora de Colombia). Cuando estas respondiendo,
+  el negocio SIEMPRE esta abierto: fuera del horario el sistema contesta solo y ni
+  siquiera te consulta. Nunca digas que estan cerrados.
 
   ## Contacto y canales
   - WhatsApp / telefono: 304 568 6743
@@ -154,5 +155,7 @@ off_topic_message: "Ese tema no esta dentro de lo que te puedo ayudar en Fruppy 
 payment_number_message: "Nequi / llave: 3045686743. Cuando hagas el pago, confirmanos para que nuestro equipo revise la transaccion y te informe."
 payment_confirmation_message: "¡Perfecto! 📱 Nuestro equipo revisara la transaccion y te informaremos cuanto antes. ¡Gracias por tu compra! ✨"
 fallback_message: "Disculpa, no entendi tu mensaje. ¿Podrias reformularlo?"
+closed_before_message: "¡Buenos dias! ☀️ Aun no abrimos. Nuestro horario es de 9am a 9pm.\nDesde las 9am te atendemos con todo gusto y tomamos tu pedido.\nMientras tanto puedes ver el menu en www.fruppyhelados.com 🍦"
+closed_after_message: "Por ahora estamos cerrados 🌙 Nuestro horario es de 9am a 9pm todos los dias.\nManana desde las 9am te atendemos con gusto y tomamos tu pedido.\nMientras tanto puedes ver el menu en www.fruppyhelados.com 🍦"
 unsupported_type_message: "Por ahora solo puedo leer mensajes de texto 🙏 Escribeme lo que necesitas y con gusto te ayudo. Mira nuestro menu en www.fruppyhelados.com 🍦"
 error_message: "Lo siento, estoy teniendo problemas tecnicos. Por favor intenta de nuevo en unos minutos."

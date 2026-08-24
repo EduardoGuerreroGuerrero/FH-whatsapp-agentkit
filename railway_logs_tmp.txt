@@ -1,0 +1,51 @@
+﻿Starting Container
+02:36:31  INFO     Proveedor de WhatsApp: ProveedorMeta
+02:36:31  INFO     HTTP Request: GET https://graph.facebook.com/v25.0/1342434335611320?fields=display_phone_number%2Cverified_name%2Cquality_rating "HTTP/1.1 200 OK"
+02:36:31  INFO     Conexion con el proveedor: OK ÔÇö Numero +57 324 3111553 conectado (calidad: GREEN)
+INFO:     Started server process [2]
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+INFO:     Waiting for application startup.
+02:36:31  INFO     Base de datos lista
+02:36:31  INFO     Servidor AgentKit escuchando en el puerto 8080
+02:36:30  WARNING  META_APP_SECRET no esta configurado: los webhooks NO se verifican. Sirve para probar, pero no lo dejes asi en produccion.
+INFO:     100.64.0.2:47758 - "POST /webhook HTTP/1.1" 200 OK
+02:38:59  INFO     Mensaje de 573133869174: Habla cv
+02:38:59  INFO     AFC is enabled with max remote calls: 10.
+02:38:59  WARNING  Direct use of automatic function calling (AFC) in AsyncModels.generate_content is not recommended. Instead, we recommend to use AFC in AsyncChat.send_message. Similarly, direct use of AFC in AsyncModels.generate_content_stream is not recommended. Instead, we recommend to use AFC in AsyncChat.send_message_stream.
+02:38:59  INFO     HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent "HTTP/1.1 404 Not Found"
+02:38:59  ERROR    Error llamando a Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite for the latest features and improvements.', 'status': 'NOT_FOUND'}}
+02:39:00  INFO     HTTP Request: POST https://graph.facebook.com/v25.0/1342434335611320/messages "HTTP/1.1 200 OK"
+02:39:00  INFO     Respuesta enviada a 573133869174: Lo siento, estoy teniendo problemas tecnicos. Por favor intenta de nuevo en unos minutos.
+INFO:     100.64.0.3:38148 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     100.64.0.4:24772 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     100.64.0.5:57214 - "POST /webhook HTTP/1.1" 200 OK
+02:39:30  INFO     AFC is enabled with max remote calls: 10.
+02:39:30  INFO     HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent "HTTP/1.1 404 Not Found"
+02:39:30  ERROR    Error llamando a Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite for the latest features and improvements.', 'status': 'NOT_FOUND'}}
+02:39:31  INFO     HTTP Request: POST https://graph.facebook.com/v25.0/1342434335611320/messages "HTTP/1.1 200 OK"
+02:39:31  INFO     Respuesta enviada a 573002797970: Lo siento, estoy teniendo problemas tecnicos. Por favor intenta de nuevo en unos minutos.
+02:39:30  INFO     Mensaje de 573002797970: Hola
+INFO:     100.64.0.6:10338 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     100.64.0.8:54246 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     100.64.0.9:21742 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     100.64.0.7:27846 - "POST /webhook HTTP/1.1" 200 OK
+02:39:38  INFO     Mensaje de 573002797970: Ese es monda
+INFO:     100.64.0.10:20830 - "POST /webhook HTTP/1.1" 200 OK
+02:39:38  INFO     AFC is enabled with max remote calls: 10.
+02:39:38  ERROR    Error llamando a Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite for the latest features and improvements.', 'status': 'NOT_FOUND'}}
+02:39:38  INFO     HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent "HTTP/1.1 404 Not Found"
+02:39:38  ERROR    Error llamando a Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash-lite is no longer available to new users. Please update your code to use models/gemini-3.5-flash-lite for the latest features and improvements.', 'status': 'NOT_FOUND'}}
+02:39:38  INFO     Mensaje de 573133869174: Habla pa ve
+INFO:     100.64.0.11:19044 - "POST /webhook HTTP/1.1" 200 OK
+02:39:38  INFO     AFC is enabled with max remote calls: 10.
+02:39:38  INFO     HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent "HTTP/1.1 404 Not Found"
+02:39:39  INFO     HTTP Request: POST https://graph.facebook.com/v25.0/1342434335611320/messages "HTTP/1.1 200 OK"
+02:39:39  INFO     Respuesta enviada a 573133869174: Lo siento, estoy teniendo problemas tecnicos. Por favor intenta de nuevo en unos minutos.
+02:39:39  INFO     HTTP Request: POST https://graph.facebook.com/v25.0/1342434335611320/messages "HTTP/1.1 200 OK"
+02:39:39  INFO     Respuesta enviada a 573002797970: Lo siento, estoy teniendo problemas tecnicos. Por favor intenta de nuevo en unos minutos.
+INFO:     100.64.0.7:27862 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     100.64.0.8:43682 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     100.64.0.5:37826 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     100.64.0.12:16314 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     100.64.0.12:16314 - "POST /webhook HTTP/1.1" 200 OK

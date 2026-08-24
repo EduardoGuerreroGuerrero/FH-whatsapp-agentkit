@@ -31,10 +31,13 @@ def cargar_info_negocio() -> dict:
 
 def obtener_horario() -> dict:
     """Retorna el horario de atencion del negocio."""
+    # Import local: agent.horario lee la config de aca y un import arriba seria circular.
+    from agent.horario import esta_abierto
+
     info = cargar_info_negocio()
     return {
         "horario": info.get("negocio", {}).get("horario", "No disponible"),
-        "esta_abierto": True,
+        "esta_abierto": esta_abierto(),
     }
 
 

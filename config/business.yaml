@@ -3,6 +3,12 @@ negocio:
   nombre: "Fruppy Helados"
   descripcion: "Heladeria y fruteria ubicada en la ciudad de Barranquilla. Ofrecemos productos alimenticios preparados principalmente a partir de frutas y helado, con enfasis en ser saludables, sabrosos y economicos."
   horario: "9:00 am - 9:00 pm"
+  # Horario real que usa el codigo para saber si esta abierto (agent/horario.py).
+  # Si cambias el horario, actualiza tambien el texto de arriba y el system prompt.
+  atencion:
+    zona_horaria: "America/Bogota"
+    abre: "09:00"
+    cierra: "21:00"
   ubicacion: "Barranquilla, Colombia"
   contacto:
     whatsapp: "304 568 6743"

@@ -8,3 +8,6 @@ pyyaml>=6.0.3
 aiosqlite>=0.22.0
 asyncpg>=0.31.0
 python-multipart>=0.0.20
+# zoneinfo necesita la base de datos de zonas horarias del sistema; en imagenes slim de
+# Docker y en Windows puede no estar, y America/Bogota falla al resolverse.
+tzdata>=2025.2

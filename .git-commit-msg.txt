@@ -1,0 +1,28 @@
+Responder a los clientes que Meta identifica solo con BSUID
+
+Desde abril de 2026 Meta puede omitir el telefono del cliente en el webhook y
+mandar unicamente un business-scoped user id (from_user_id, "CO.1744..."). Solo
+incluye el telefono si hubo contacto con ese numero en los ultimos 30 dias, asi
+que el dueno del negocio seguia recibiendo respuesta y todos los clientes nuevos
+quedaban en silencio: el adaptador los descartaba por venir "sin from".
+
+El envio tenia el mismo problema del otro lado: un BSUID metido en "to" lo
+rechaza Meta con el error 131009. El campo correcto es "recipient".
+
+- Identidad canonica por cliente: BSUID si existe, telefono si no. Es la llave
+  del historial porque viene en todos los webhooks y es estable.
+- Al responder se prefiere el telefono cuando se conoce (asi Meta lo sigue
+  mandando) y se usa "recipient" cuando solo hay BSUID.
+- Tabla identidades: fusiona el historial que habia quedado bajo el telefono, en
+  vez de arrancar de cero al cliente.
+- Se registran los webhooks de estado (sent/delivered/failed): un HTTP 200 de
+  Meta significa aceptado, no entregado, y hasta ahora eso era invisible.
+- Reintentos de envio ante red, 429 y 5xx, y errores de Meta con codigo y
+  detalle en vez del JSON crudo.
+- Los mensajes que no son texto (audio, foto) reciben un aviso en vez de nada.
+- Gemini: thinking_level bajo y tope de 512 tokens. Con 80 el razonamiento
+  interno se comia el cupo y el cliente recibia "no entendi tu mensaje".
+
+Generated with [Devin](https://devin.ai)
+
+Co-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.com>
