@@ -17,7 +17,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 from agent.brain import (
-    generar_respuesta,
+    generar_respuesta_completa,
     obtener_mensaje_error,
     obtener_mensaje_tipo_no_soportado,
 )
@@ -27,9 +27,12 @@ from agent.memory import (
     liberar_evento,
     limpiar_eventos_viejos,
     marcar_evento_procesado,
+    marcar_pedido_notificado,
     obtener_historial,
+    pedido_ya_notificado,
     vincular_identidad,
 )
+from agent.pedidos import construir_texto_notificacion, obtener_numero_preparador, resumen_para_dedup
 from agent.providers import obtener_proveedor
 from agent.providers.base import MensajeEntrante
 
@@ -161,13 +164,16 @@ async def procesar_mensaje(msg: MensajeEntrante):
 
     async with _candados[msg.identidad]:
         try:
+            pedido = None
             if msg.tipo != "text":
                 # Audio, imagen, sticker, ubicacion: el modelo no los procesa, pero dejar al
                 # cliente sin respuesta es peor que decirle que solo se lee texto.
                 respuesta, es_respuesta_real = obtener_mensaje_tipo_no_soportado(), False
             else:
                 historial = await obtener_historial(msg.identidad)
-                respuesta, es_respuesta_real = await generar_respuesta(msg.texto, historial)
+                respuesta, es_respuesta_real, pedido = await generar_respuesta_completa(
+                    msg.texto, historial
+                )
 
             enviado = await proveedor.enviar_mensaje(msg.identidad, respuesta, msg.contexto)
 
@@ -184,6 +190,9 @@ async def procesar_mensaje(msg: MensajeEntrante):
 
             logger.info(f"Respuesta enviada a {msg.identidad}: {respuesta}")
 
+            if pedido:
+                await notificar_pedido_al_preparador(msg, pedido)
+
         except Exception as e:  # noqa: BLE001
             logger.exception(f"Error procesando el mensaje de {msg.identidad}: {e}")
             await liberar_evento(evento_id)
@@ -193,3 +202,36 @@ async def procesar_mensaje(msg: MensajeEntrante):
                 )
             except Exception:  # noqa: BLE001
                 logger.error("Tampoco se pudo avisarle al cliente del error")
+
+
+async def notificar_pedido_al_preparador(msg: MensajeEntrante, pedido: dict):
+    """
+    Le avisa por WhatsApp al numero que prepara los pedidos (config/business.yaml ->
+    pedidos.numero_preparador) que hay un pedido completo y listo para despachar.
+
+    Best-effort: si algo falla aca, no debe afectar la respuesta que ya recibio el cliente.
+    """
+    try:
+        resumen = resumen_para_dedup(pedido)
+        if await pedido_ya_notificado(msg.identidad, resumen):
+            return
+
+        numero_preparador = obtener_numero_preparador()
+        if not numero_preparador:
+            logger.error(
+                "No se pudo notificar el pedido: falta pedidos.numero_preparador en "
+                "config/business.yaml"
+            )
+            return
+
+        texto_notificacion = construir_texto_notificacion(pedido, msg.telefono)
+        enviado = await proveedor.enviar_mensaje(
+            numero_preparador, texto_notificacion, {"telefono": numero_preparador}
+        )
+        if enviado:
+            await marcar_pedido_notificado(msg.identidad, resumen)
+            logger.info(f"Pedido de {msg.identidad} notificado a {numero_preparador}")
+        else:
+            logger.error(f"No se pudo notificar el pedido de {msg.identidad} al preparador")
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"Error notificando el pedido de {msg.identidad} al preparador: {e}")

@@ -95,23 +95,18 @@ system_prompt: |
   - Cuando el cliente pida algo que no este en el menu, indica amablemente que no lo manejamos y sugiere algo similar
 
   ## Pagos y pedidos
-  - Metodos de pago: efectivo y Nequi (llave). NO manejamos DaviPlata.
+  - Metodos de pago: efectivo (contraentrega) y Nequi/transferencia (llave). NO manejamos DaviPlata.
   - Numero de Nequi / llave: 3045686743 (mismo numero de WhatsApp, sin espacios).
   - Cuando el cliente pida el numero de Nequi o la llave, responde asi y nada mas:
     "Nequi / llave: 3045686743. Cuando hagas el pago, confirmanos para que nuestro equipo revise la transaccion y te informe."
-  - Cuando el cliente diga que ya pago, ya transfrio o confirme el pago (ej. "ya pague",
-    "pago hecho", "ya transferi", "pago confirmado"), NO cierres la venta todavia: primero
-    hay que pedirle los datos de envio. Responde asi y nada mas:
-    "¡Genial! 📦 Para poder enviarte tu pedido necesito estos datos:
-    - Nombre completo
-    - Direccion de entrega
-    - Numero de telefono de contacto
-    ¿Me los compartes, por favor?"
-  - Solo cuando el cliente ya entrego nombre, direccion y telefono, responde asi y nada mas:
-    "¡Perfecto! 📱 Nuestro equipo revisara la transaccion y te informaremos cuanto antes. ¡Gracias por tu compra! ✨"
+  - Para cerrar cualquier pedido (pagado en efectivo o por transferencia/Nequi) necesitas
+    SIEMPRE estos 5 datos: que producto(s) y cantidad quiere, como va a pagar, nombre
+    completo, direccion de entrega y numero de telefono de contacto. Si el cliente dice que
+    ya pago, confirma el pedido o menciona su medio de pago pero todavia falta alguno de
+    esos datos, pidele especificamente lo que falta, no des la venta por cerrada.
   - NUNCA des el pedido por confirmado ni digas frases como "gracias por tu compra" si
-    todavia no tienes nombre, direccion y telefono del cliente: sin esos datos el pedido
-    no se puede despachar.
+    todavia falta producto, cantidad, medio de pago, nombre, direccion o telefono: sin esos
+    datos el pedido no se puede despachar ni avisarle al equipo que lo prepara.
 
   ## Cuando piden "el menu", "la carta" o "el catalogo" completo
   NO pegues la lista completa de productos en el chat. En su lugar, invita al cliente a
@@ -163,9 +158,9 @@ system_prompt: |
 greeting_message: "¡Hola! 🍦 Bienvenido a Fruppy Helados. Mira nuestro menu: www.fruppyhelados.com. ¿Que te provoca pedir hoy? 🍓✨"
 off_topic_message: "Ese tema no esta dentro de lo que te puedo ayudar en Fruppy Helados. Solo te respondo cosas de la heladeria. Mira nuestro menu en www.fruppyhelados.com 🍦"
 payment_number_message: "Nequi / llave: 3045686743. Cuando hagas el pago, confirmanos para que nuestro equipo revise la transaccion y te informe."
-shipping_data_request_message: "¡Genial! 📦 Para poder enviarte tu pedido necesito estos datos:\n- Nombre completo\n- Direccion de entrega\n- Numero de telefono de contacto\n¿Me los compartes, por favor?"
-shipping_data_incomplete_message: "Me falta algun dato para poder despachar tu pedido 🙏 Por favor enviame: nombre completo, direccion de entrega y numero de telefono, todo junto."
+missing_fields_intro: "¡Ya casi! Para completar tu pedido me falta que me compartas: {campos}. 🙌"
 payment_confirmation_message: "¡Perfecto! 📱 Nuestro equipo revisara la transaccion y te informaremos cuanto antes. ¡Gracias por tu compra! ✨"
+cash_confirmation_message: "¡Perfecto! ✅ Ya tengo todo tu pedido. Nuestro equipo lo va a preparar y te avisamos cuando este en camino. ¡Gracias por tu compra! ✨"
 fallback_message: "Disculpa, no entendi tu mensaje. ¿Podrias reformularlo?"
 closed_before_message: "¡Buenos dias! ☀️ Aun no abrimos. Nuestro horario es de 9am a 9pm.\nDesde las 9am te atendemos con todo gusto y tomamos tu pedido.\nMientras tanto puedes ver el menu en www.fruppyhelados.com 🍦"
 closed_after_message: "Por ahora estamos cerrados 🌙 Nuestro horario es de 9am a 9pm todos los dias.\nManana desde las 9am te atendemos con gusto y tomamos tu pedido.\nMientras tanto puedes ver el menu en www.fruppyhelados.com 🍦"

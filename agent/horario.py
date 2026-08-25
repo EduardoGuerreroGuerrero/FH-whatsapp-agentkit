@@ -13,6 +13,7 @@ La configuracion vive en config/business.yaml, en negocio.atencion.
 """
 
 import logging
+import os
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -23,6 +24,13 @@ logger = logging.getLogger("agentkit")
 ZONA_DEFAULT = "America/Bogota"
 APERTURA_DEFAULT = 9 * 60
 CIERRE_DEFAULT = 21 * 60
+
+# TEMPORAL: interruptor para pruebas. Con IGNORAR_HORARIO_ATENCION=true en las variables
+# de entorno, el negocio se comporta como si estuviera siempre abierto (no toca el horario
+# configurado en business.yaml, solo lo ignora al decidir si se llama al modelo).
+# Recordatorio: volver a poner esta variable en "false" (o borrarla) en Railway cuando
+# terminen las pruebas.
+_IGNORAR_HORARIO = os.getenv("IGNORAR_HORARIO_ATENCION", "false").strip().lower() == "true"
 
 
 def _a_minutos(valor, default: int) -> int:
@@ -65,6 +73,9 @@ def ahora_local() -> datetime:
 
 def esta_abierto(momento: datetime | None = None) -> bool:
     """True si el negocio esta atendiendo en este momento."""
+    if _IGNORAR_HORARIO:
+        return True
+
     apertura, cierre, zona = _config()
     momento = momento.astimezone(zona) if momento else datetime.now(zona)
     minutos = momento.hour * 60 + momento.minute

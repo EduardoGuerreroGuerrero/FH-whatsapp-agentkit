@@ -86,6 +86,11 @@ async def test_confirmacion_de_pago_se_responde_aunque_este_cerrado(brain, monke
     """Alguien que pago a las 20:58 no merece un "estamos cerrados" a las 21:01."""
     monkeypatch.setattr(brain, "esta_abierto", lambda: False)
 
+    async def _sin_datos(mensaje, historial):
+        return {}
+
+    monkeypatch.setattr("agent.pedidos.extraer_datos_pedido", _sin_datos)
+
     respuesta, es_real = await brain.generar_respuesta("ya pague", [])
 
     assert "cerrado" not in respuesta.lower()

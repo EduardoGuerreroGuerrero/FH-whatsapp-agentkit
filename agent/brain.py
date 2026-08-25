@@ -132,33 +132,27 @@ def obtener_mensaje_numero_pago() -> str:
 
 
 def obtener_mensaje_confirmacion_pago() -> str:
-    """Frase exacta cuando el cliente confirma que ya pago Y ya dio sus datos de envio."""
+    """Frase exacta cuando el pedido queda completo y el pago es por transferencia/Nequi."""
     return cargar_config_prompts().get(
         "payment_confirmation_message",
         "¡Perfecto! 📱 Nuestro equipo revisara la transaccion y te informaremos cuanto antes. ¡Gracias por tu compra! ✨",
     )
 
 
-def obtener_mensaje_solicitud_datos_envio() -> str:
-    """Frase exacta para pedir nombre, direccion y telefono tras confirmar el pago.
-
-    Sin estos datos el pedido no se puede despachar, asi que este paso es obligatorio
-    antes de dar por cerrada la venta (ver obtener_mensaje_confirmacion_pago).
-    """
+def obtener_mensaje_confirmacion_efectivo() -> str:
+    """Frase exacta cuando el pedido queda completo y el pago es en efectivo/contraentrega."""
     return cargar_config_prompts().get(
-        "shipping_data_request_message",
-        "¡Genial! 📦 Para poder enviarte tu pedido necesito estos datos:\n"
-        "- Nombre completo\n- Direccion de entrega\n- Numero de telefono de contacto\n"
-        "¿Me los compartes, por favor?",
+        "cash_confirmation_message",
+        "¡Perfecto! ✅ Ya tengo todo tu pedido. Nuestro equipo lo va a preparar y te avisamos "
+        "cuando este en camino. ¡Gracias por tu compra! ✨",
     )
 
 
-def obtener_mensaje_datos_envio_incompletos() -> str:
-    """Frase exacta cuando el cliente responde a la solicitud de datos pero faltan cosas."""
+def obtener_mensaje_faltantes_intro() -> str:
+    """Plantilla (con placeholder {campos}) para pedir los datos que faltan del pedido."""
     return cargar_config_prompts().get(
-        "shipping_data_incomplete_message",
-        "Me falta algun dato para poder despachar tu pedido 🙏 Por favor enviame: "
-        "nombre completo, direccion de entrega y numero de telefono, todo junto.",
+        "missing_fields_intro",
+        "¡Ya casi! Para completar tu pedido me falta que me compartas: {campos}. 🙌",
     )
 
 
@@ -186,6 +180,17 @@ _SALUDOS = {
 
 _PATRONES_CONFIRMACION_PAGO = re.compile(
     r"\b(ya?\s*pague?|pago\s*(hecho|confirmado|realizado|listo)|ya\s*(transfiri|transferi|hice\s*el\s*pago|hice\s*la\s*transferencia|pague\s*por|transferi\s*por)|transferencia\s*(hecha|realizada)|ya\s*cancele|pago\s*cancele|pague\s*por\s*(nequi|llave))\b",
+    re.IGNORECASE,
+)
+
+# Ademas de "ya pague" (arriba, que asume transferencia), esto cubre menciones de pago en
+# efectivo/contraentrega y frases de cierre, para que el pedido tambien se pueda confirmar
+# y notificar al preparador cuando el cliente paga en efectivo.
+_PATRONES_CIERRE_PEDIDO = re.compile(
+    r"\b(efectivo|pago\s*en\s*efectivo|pagar\s*en\s*efectivo|contra\s*ent?rega|contraentrega|"
+    r"de\s*contado|nequi|transferencia|"
+    r"confirmo\s*(el\s*)?pedido|eso\s*(seria|es)\s*todo|ese\s*es\s*mi\s*pedido|asi\s*(esta|queda)\s*bien|"
+    r"finalizar\s*(el\s*)?pedido)\b",
     re.IGNORECASE,
 )
 
@@ -222,27 +227,20 @@ def _es_solicitud_numero_pago(mensaje: str) -> bool:
     return bool(_PATRONES_NUMERO_PAGO.search(mensaje))
 
 
-_PATRON_TELEFONO_EN_TEXTO = re.compile(r"\d[\d\s\-]{5,}\d")
+def _es_cierre_de_pedido(mensaje: str) -> bool:
+    """Detecta menciones de pago en efectivo/Nequi/transferencia o frases de cierre del pedido."""
+    return bool(_PATRONES_CIERRE_PEDIDO.search(mensaje))
 
 
-def _incluye_datos_de_envio(mensaje: str) -> bool:
-    """
-    Heuristica para aceptar los datos de envio (nombre, direccion, telefono): el mensaje
-    debe traer al menos un numero de telefono (6+ digitos, permitiendo espacios/guiones) y
-    una extension minima, para no confundir un "ok" o una pregunta cualquiera con los datos
-    reales. No es perfecto, pero evita cerrar el pedido sin con que despacharlo.
-    """
-    return bool(_PATRON_TELEFONO_EN_TEXTO.search(mensaje)) and len(mensaje.strip()) >= 15
-
-
-def _se_pidieron_datos_de_envio(historial: list[dict]) -> bool:
-    """True si el ULTIMO mensaje del bot en la conversacion fue la solicitud de datos."""
+def _se_pidieron_datos_faltantes(historial: list[dict]) -> bool:
+    """True si el ULTIMO mensaje del bot fue pidiendo los datos que faltan del pedido."""
     if not historial:
         return False
     ultimo = historial[-1]
-    return ultimo["role"] == "assistant" and ultimo["content"].strip() == (
-        obtener_mensaje_solicitud_datos_envio().strip()
-    )
+    if ultimo["role"] != "assistant":
+        return False
+    prefijo = obtener_mensaje_faltantes_intro().split("{campos}")[0].strip()
+    return ultimo["content"].strip().startswith(prefijo)
 
 
 def _construir_config(system_instruction: str, max_tokens: int) -> types.GenerateContentConfig:
@@ -422,43 +420,76 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, b
     """
     Genera una respuesta con Gemini.
 
+    Wrapper de compatibilidad sobre generar_respuesta_completa(): conserva la firma que ya
+    usan main.py y los tests, para quien no necesite enterarse de si se completo un pedido.
+
     Returns:
         (texto, es_respuesta_real)
     """
+    texto, es_respuesta_real, _pedido = await generar_respuesta_completa(mensaje, historial)
+    return texto, es_respuesta_real
+
+
+async def generar_respuesta_completa(
+    mensaje: str, historial: list[dict]
+) -> tuple[str, bool, dict | None]:
+    """
+    Genera una respuesta con Gemini.
+
+    Returns:
+        (texto, es_respuesta_real, pedido_completo)
+
+        pedido_completo trae los datos del pedido (nombre, direccion, telefono, pedido,
+        medio_pago) cuando este turno dejo el pedido completo y listo para avisarle al
+        preparador; en cualquier otro caso es None.
+    """
     if not mensaje or len(mensaje.strip()) < 2:
-        return obtener_mensaje_fallback(), False
+        return obtener_mensaje_fallback(), False, None
 
     # 1. Saludos: respuesta fija exacta, sin gastar llamada al LLM.
     if _es_saludo(mensaje):
-        return obtener_mensaje_saludo(), True
+        return obtener_mensaje_saludo(), True, None
 
-    # 2. Datos de envio pendientes: si el ultimo mensaje del bot fue pedir nombre,
-    #    direccion y telefono, este mensaje del cliente deberia traerlos. Va antes que la
-    #    deteccion de "ya pague" porque el cliente puede repetir esa frase al responder
-    #    (p. ej. "ya pague, mis datos son..."). Sin esto el pedido queda sin como despacharse.
-    if _se_pidieron_datos_de_envio(historial):
-        if _incluye_datos_de_envio(mensaje):
-            logger.info(f"Datos de envio recibidos, se cierra la venta: {mensaje}")
-            return obtener_mensaje_confirmacion_pago(), True
-        return obtener_mensaje_datos_envio_incompletos(), True
+    # 2. Gestion del pedido: entra aca si el bot ya estaba pidiendo los datos que faltan
+    #    (el cliente deberia estar completandolos ahora) o si el cliente acaba de mencionar
+    #    como va a pagar (efectivo, Nequi, transferencia) o una frase de cierre del pedido.
+    #    Va antes de "solicitud de numero de pago" porque el cliente puede combinar ambas
+    #    cosas (p. ej. "pago por nequi, mis datos son..."), pero "dame el numero de nequi"
+    #    (sin frase de pago/cierre) se resuelve aparte, mas abajo.
+    if _se_pidieron_datos_faltantes(historial) or (
+        not _es_solicitud_numero_pago(mensaje)
+        and (_es_confirmacion_pago(mensaje) or _es_cierre_de_pedido(mensaje))
+    ):
+        from agent.pedidos import campos_faltantes, extraer_datos_pedido, mensaje_pidiendo_faltantes
 
-    # 3. Pago: confirmacion de pago pide primero los datos de envio (nombre, direccion,
-    #    telefono); la venta solo se da por cerrada cuando el cliente los entrega (paso 2).
-    if _es_confirmacion_pago(mensaje):
-        return obtener_mensaje_solicitud_datos_envio(), True
+        pedido = await extraer_datos_pedido(mensaje, historial)
+        faltantes = campos_faltantes(pedido)
+        if faltantes:
+            return mensaje_pidiendo_faltantes(faltantes), True, None
+
+        medio_pago = (pedido.get("medio_pago") or "").lower()
+        es_transferencia = "transfer" in medio_pago or "nequi" in medio_pago
+        texto_confirmacion = (
+            obtener_mensaje_confirmacion_pago()
+            if es_transferencia
+            else obtener_mensaje_confirmacion_efectivo()
+        )
+        logger.info(f"Pedido completo, se notificara al preparador: {pedido}")
+        return texto_confirmacion, True, pedido
+
     if _es_solicitud_numero_pago(mensaje):
-        return obtener_mensaje_numero_pago(), True
+        return obtener_mensaje_numero_pago(), True, None
 
-    # 4. Fuera del horario de atencion no se llama al modelo: el ni sabe que hora es y
+    # 3. Fuera del horario de atencion no se llama al modelo: el ni sabe que hora es y
     #    terminaba aceptando pedidos a medianoche. Va despues de los avisos de pago para
     #    no dejar colgado a quien pago justo antes de cerrar.
     if not esta_abierto():
         logger.info("Mensaje recibido fuera del horario de atencion; no se llama al modelo")
-        return obtener_mensaje_fuera_de_horario(), False
+        return obtener_mensaje_fuera_de_horario(), False, None
 
-    # 5. Verificar que la consulta sea del negocio. Si no, frase de rechazo exacta.
+    # 4. Verificar que la consulta sea del negocio. Si no, frase de rechazo exacta.
     if not await _es_sobre_negocio(mensaje, historial):
-        return obtener_mensaje_fuera_de_tema(), True
+        return obtener_mensaje_fuera_de_tema(), True, None
 
     contents = [
         types.Content(
@@ -480,14 +511,14 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, b
             logger.error(f"Error llamando a Gemini: {e}")
         texto_respaldo = await _generar_respuesta_openrouter(mensaje, historial)
         if texto_respaldo:
-            return texto_respaldo, True
-        return obtener_mensaje_error(), False
+            return texto_respaldo, True, None
+        return obtener_mensaje_error(), False, None
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error llamando a Gemini: {e}")
         texto_respaldo = await _generar_respuesta_openrouter(mensaje, historial)
         if texto_respaldo:
-            return texto_respaldo, True
-        return obtener_mensaje_error(), False
+            return texto_respaldo, True, None
+        return obtener_mensaje_error(), False, None
 
     texto = _extraer_texto(respuesta)
 
@@ -517,7 +548,7 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, b
 
     if not texto:
         logger.warning("Gemini devolvio una respuesta sin texto")
-        return obtener_mensaje_fallback(), False
+        return obtener_mensaje_fallback(), False, None
 
     if _se_corto_por_tokens(respuesta):
         # Sigue cortada incluso despues del reintento. Mejor mandar una frase completa y
@@ -534,4 +565,4 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, b
     entrada = getattr(uso, "prompt_token_count", "?") if uso else "?"
     salida = getattr(uso, "candidates_token_count", "?") if uso else "?"
     logger.info(f"Respuesta generada con {MODELO} ({entrada} in / {salida} out)")
-    return texto, True
+    return texto, True, None

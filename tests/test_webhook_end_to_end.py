@@ -41,10 +41,10 @@ def app_agente(monkeypatch, tmp_path):
         return True
 
     async def responder_falso(mensaje, historial):
-        return f"respuesta a: {mensaje}", True
+        return f"respuesta a: {mensaje}", True, None
 
     monkeypatch.setattr(main.proveedor, "enviar_mensaje", enviar_falso)
-    monkeypatch.setattr(main, "generar_respuesta", responder_falso)
+    monkeypatch.setattr(main, "generar_respuesta_completa", responder_falso)
     # El chequeo de conexion del arranque hablaria con la Graph API de verdad.
     monkeypatch.setattr(main.proveedor, "verificar_conexion", lambda: _ok())
 

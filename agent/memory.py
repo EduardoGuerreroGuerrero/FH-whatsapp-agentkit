@@ -92,6 +92,22 @@ class EventoProcesado(Base):
     )
 
 
+class PedidoNotificado(Base):
+    """
+    Ultimo pedido de cada cliente que ya se le avisamos al preparador.
+
+    Evita reenviar el mismo pedido dos veces si el cliente repite el mensaje de cierre,
+    pero permite avisar un pedido NUEVO/distinto del mismo cliente mas adelante (el
+    resumen cambia).
+    """
+
+    __tablename__ = "pedidos_notificados"
+
+    identidad: Mapped[str] = mapped_column(String(140), primary_key=True)
+    resumen: Mapped[str] = mapped_column(Text)
+    notificado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=ahora)
+
+
 async def inicializar_db():
     """Crea las tablas si no existen y ajusta las columnas que cambiaron de tamano."""
     async with engine.begin() as conn:
@@ -177,6 +193,27 @@ async def limpiar_eventos_viejos(dias: int = 7):
         await session.commit()
     if resultado.rowcount:
         logger.info(f"Se limpiaron {resultado.rowcount} eventos de mas de {dias} dias")
+
+
+async def pedido_ya_notificado(identidad: str, resumen: str) -> bool:
+    """True si a este cliente ya se le noto este MISMO pedido al preparador."""
+    async with async_session() as session:
+        existente = await session.get(PedidoNotificado, identidad)
+        return existente is not None and existente.resumen == resumen
+
+
+async def marcar_pedido_notificado(identidad: str, resumen: str):
+    """Registra (o actualiza) el ultimo pedido notificado de un cliente."""
+    async with async_session() as session:
+        existente = await session.get(PedidoNotificado, identidad)
+        if existente is None:
+            session.add(
+                PedidoNotificado(identidad=identidad, resumen=resumen, notificado_en=ahora())
+            )
+        else:
+            existente.resumen = resumen
+            existente.notificado_en = ahora()
+        await session.commit()
 
 
 async def guardar_mensaje(identidad: str, role: str, content: str):
