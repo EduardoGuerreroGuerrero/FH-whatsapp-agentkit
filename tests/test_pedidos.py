@@ -64,7 +64,8 @@ def test_resumen_para_dedup_es_estable(pedidos):
     assert a == b
 
 
-async def test_pedido_completo_dispara_notificacion_efectivo(brain, monkeypatch):
+async def test_pedido_completo_primero_muestra_resumen_sin_notificar(brain, monkeypatch):
+    """Al completar los 5 datos, se le pide confirmar el resumen; todavia NO se notifica."""
     monkeypatch.setattr(brain, "esta_abierto", lambda: True)
 
     async def _completo(mensaje, historial):
@@ -77,11 +78,33 @@ async def test_pedido_completo_dispara_notificacion_efectivo(brain, monkeypatch)
     )
 
     assert es_real is True
+    assert pedido is None  # no se notifica hasta que el cliente confirme
+    assert "Juan Perez" in respuesta
+    assert "banana split" in respuesta
+    assert "confirmas" in respuesta.lower()
+
+
+async def test_cliente_confirma_el_resumen_dispara_notificacion_efectivo(brain, monkeypatch):
+    monkeypatch.setattr(brain, "esta_abierto", lambda: True)
+
+    async def _completo(mensaje, historial):
+        return PEDIDO_COMPLETO_EFECTIVO
+
+    monkeypatch.setattr("agent.pedidos.extraer_datos_pedido", _completo)
+
+    resumen = brain.obtener_mensaje_resumen_intro().format(detalle="(lo que sea)")
+    historial = [{"role": "assistant", "content": resumen}]
+
+    respuesta, es_real, pedido = await brain.generar_respuesta_completa("si, todo bien", historial)
+
+    assert es_real is True
     assert pedido == PEDIDO_COMPLETO_EFECTIVO
-    assert "efectivo" not in respuesta.lower()  # confirmacion generica, no repite el medio de pago
+    assert respuesta == brain.obtener_mensaje_confirmacion_efectivo()
 
 
-async def test_pedido_completo_transferencia_usa_mensaje_de_transferencia(brain, monkeypatch):
+async def test_cliente_confirma_el_resumen_transferencia_usa_mensaje_de_transferencia(
+    brain, monkeypatch
+):
     monkeypatch.setattr(brain, "esta_abierto", lambda: True)
 
     async def _completo(mensaje, historial):
@@ -89,11 +112,55 @@ async def test_pedido_completo_transferencia_usa_mensaje_de_transferencia(brain,
 
     monkeypatch.setattr("agent.pedidos.extraer_datos_pedido", _completo)
 
-    respuesta, es_real, pedido = await brain.generar_respuesta_completa("ya pague", [])
+    resumen = brain.obtener_mensaje_resumen_intro().format(detalle="(lo que sea)")
+    historial = [{"role": "assistant", "content": resumen}]
+
+    respuesta, es_real, pedido = await brain.generar_respuesta_completa("confirmo", historial)
 
     assert es_real is True
     assert pedido == PEDIDO_COMPLETO_TRANSFERENCIA
     assert respuesta == brain.obtener_mensaje_confirmacion_pago()
+
+
+async def test_cliente_rechaza_el_resumen_sin_decir_que_corregir(brain, monkeypatch):
+    monkeypatch.setattr(brain, "esta_abierto", lambda: True)
+
+    async def _explotar(mensaje, historial):
+        raise AssertionError("no deberia re-extraer si el cliente no dijo que corregir")
+
+    monkeypatch.setattr("agent.pedidos.extraer_datos_pedido", _explotar)
+
+    resumen = brain.obtener_mensaje_resumen_intro().format(detalle="(lo que sea)")
+    historial = [{"role": "assistant", "content": resumen}]
+
+    respuesta, es_real, pedido = await brain.generar_respuesta_completa("no", historial)
+
+    assert es_real is True
+    assert pedido is None
+    assert respuesta == brain.obtener_mensaje_pedir_correccion()
+
+
+async def test_cliente_corrige_un_dato_muestra_resumen_actualizado(brain, monkeypatch):
+    monkeypatch.setattr(brain, "esta_abierto", lambda: True)
+
+    corregido = {**PEDIDO_COMPLETO_EFECTIVO, "direccion": "Calle nueva 123"}
+
+    async def _corregido(mensaje, historial):
+        return corregido
+
+    monkeypatch.setattr("agent.pedidos.extraer_datos_pedido", _corregido)
+
+    resumen = brain.obtener_mensaje_resumen_intro().format(detalle="(lo que sea)")
+    historial = [{"role": "assistant", "content": resumen}]
+
+    respuesta, es_real, pedido = await brain.generar_respuesta_completa(
+        "no, mi direccion es Calle nueva 123", historial
+    )
+
+    assert es_real is True
+    assert pedido is None  # se le vuelve a pedir confirmar, todavia no se notifica
+    assert "Calle nueva 123" in respuesta
+    assert "confirmas" in respuesta.lower()
 
 
 async def test_pedido_incompleto_pide_lo_que_falta_y_no_notifica(brain, monkeypatch):

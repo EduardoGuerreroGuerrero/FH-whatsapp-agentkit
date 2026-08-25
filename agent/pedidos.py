@@ -115,14 +115,27 @@ def campos_faltantes(pedido: dict) -> list[str]:
 
 def mensaje_pidiendo_faltantes(faltantes: list[str]) -> str:
     """Arma el mensaje que le pide al cliente los datos que aun faltan."""
-    from agent.brain import cargar_config_prompts  # import local: ver docstring del modulo
+    from agent.brain import obtener_mensaje_faltantes_intro  # import local: ver docstring del modulo
 
-    intro = cargar_config_prompts().get(
-        "missing_fields_intro",
-        "¡Ya casi! Para completar tu pedido me falta que me compartas: {campos}. 🙌",
-    )
     lista = ", ".join(CAMPOS_REQUERIDOS[c] for c in faltantes)
-    return intro.format(campos=lista)
+    return obtener_mensaje_faltantes_intro().format(campos=lista)
+
+
+def construir_resumen_para_cliente(pedido: dict) -> str:
+    """
+    Arma el resumen que se le manda AL CLIENTE para que confirme sus datos antes de
+    avisarle al preparador. No se notifica nada todavia en este paso.
+    """
+    from agent.brain import obtener_mensaje_resumen_intro  # import local: ver docstring del modulo
+
+    detalle = (
+        f"🛍️ Pedido: {pedido.get('pedido', '?')}\n"
+        f"💳 Medio de pago: {pedido.get('medio_pago', '?')}\n"
+        f"🙍 Nombre: {pedido.get('nombre', '?')}\n"
+        f"📍 Direccion: {pedido.get('direccion', '?')}\n"
+        f"📞 Telefono: {pedido.get('telefono', '?')}"
+    )
+    return obtener_mensaje_resumen_intro().format(detalle=detalle)
 
 
 def _es_pago_por_transferencia(medio_pago: str | None) -> bool:

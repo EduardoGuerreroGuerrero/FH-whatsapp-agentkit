@@ -156,6 +156,23 @@ def obtener_mensaje_faltantes_intro() -> str:
     )
 
 
+def obtener_mensaje_resumen_intro() -> str:
+    """Plantilla (con placeholder {detalle}) para mostrarle al cliente el resumen del pedido."""
+    return cargar_config_prompts().get(
+        "order_summary_intro",
+        "📋 Este es tu pedido:\n{detalle}\n\n¿Confirmas que todo esta correcto? Responde "
+        "*si* para confirmar o cuentame que hay que corregir.",
+    )
+
+
+def obtener_mensaje_pedir_correccion() -> str:
+    """Frase cuando el cliente dice que el resumen esta mal, pero no dice que corregir."""
+    return cargar_config_prompts().get(
+        "order_correction_prompt",
+        "Cuentame que dato hay que corregir y te lo actualizo 🙏",
+    )
+
+
 _SALUDOS = {
     "hola",
     "buenas",
@@ -240,6 +257,80 @@ def _se_pidieron_datos_faltantes(historial: list[dict]) -> bool:
     if ultimo["role"] != "assistant":
         return False
     prefijo = obtener_mensaje_faltantes_intro().split("{campos}")[0].strip()
+    return ultimo["content"].strip().startswith(prefijo)
+
+
+_AFIRMACIONES_RESUMEN = {
+    "si",
+    "si esta bien",
+    "si es correcto",
+    "si esta correcto",
+    "si asi esta bien",
+    "si asi es",
+    "confirmo",
+    "correcto",
+    "asi es",
+    "asi esta bien",
+    "esta bien",
+    "esta correcto",
+    "todo bien",
+    "todo correcto",
+    "dale",
+    "listo",
+    "exacto",
+    "eso es",
+    "afirmativo",
+    "confirmado",
+    "de acuerdo",
+    "ok",
+    "vale",
+}
+
+_PALABRAS_AFIRMACION_INICIAL = {
+    "si",
+    "confirmo",
+    "correcto",
+    "dale",
+    "listo",
+    "ok",
+    "vale",
+    "exacto",
+    "afirmativo",
+    "confirmado",
+}
+
+
+def _es_confirmacion_resumen(mensaje: str) -> bool:
+    """Detecta un 'si, esta bien' (o similar) en respuesta al resumen del pedido."""
+    limpio = _normalizar(mensaje)
+    if not limpio:
+        return False
+    if limpio in _AFIRMACIONES_RESUMEN:
+        return True
+    palabras = limpio.split()
+    return palabras[0] in _PALABRAS_AFIRMACION_INICIAL and len(palabras) <= 6
+
+
+def _es_rechazo_simple_resumen(mensaje: str) -> bool:
+    """
+    Detecta un 'no' sin mas contexto (sin decir que corregir), para pedirle al cliente
+    que especifique el dato en vez de tratar el mensaje como si trajera la correccion.
+    """
+    limpio = _normalizar(mensaje)
+    if not limpio:
+        return False
+    palabras = limpio.split()
+    return palabras[0] == "no" and len(palabras) <= 4
+
+
+def _se_espera_confirmacion_resumen(historial: list[dict]) -> bool:
+    """True si el ULTIMO mensaje del bot fue el resumen del pedido pidiendo confirmacion."""
+    if not historial:
+        return False
+    ultimo = historial[-1]
+    if ultimo["role"] != "assistant":
+        return False
+    prefijo = obtener_mensaje_resumen_intro().split("{detalle}")[0].strip()
     return ultimo["content"].strip().startswith(prefijo)
 
 
@@ -450,7 +541,42 @@ async def generar_respuesta_completa(
     if _es_saludo(mensaje):
         return obtener_mensaje_saludo(), True, None
 
-    # 2. Gestion del pedido: entra aca si el bot ya estaba pidiendo los datos que faltan
+    # 2. El cliente esta respondiendo al RESUMEN del pedido que se le mando a confirmar
+    #    (ver paso 3). Aca es donde se decide si ya se le avisa al preparador: nunca antes.
+    if _se_espera_confirmacion_resumen(historial):
+        from agent.pedidos import campos_faltantes, construir_resumen_para_cliente, extraer_datos_pedido, mensaje_pidiendo_faltantes
+
+        if _es_confirmacion_resumen(mensaje):
+            pedido = await extraer_datos_pedido(mensaje, historial)
+            faltantes = campos_faltantes(pedido)
+            if faltantes:
+                # Muy raro (el resumen ya tenia todo), pero por seguridad no se notifica
+                # un pedido a medias.
+                return mensaje_pidiendo_faltantes(faltantes), True, None
+
+            medio_pago = (pedido.get("medio_pago") or "").lower()
+            es_transferencia = "transfer" in medio_pago or "nequi" in medio_pago
+            texto_confirmacion = (
+                obtener_mensaje_confirmacion_pago()
+                if es_transferencia
+                else obtener_mensaje_confirmacion_efectivo()
+            )
+            logger.info(f"Cliente confirmo el resumen, se notificara al preparador: {pedido}")
+            return texto_confirmacion, True, pedido
+
+        if _es_rechazo_simple_resumen(mensaje):
+            return obtener_mensaje_pedir_correccion(), True, None
+
+        # El cliente no dijo un "si" ni un "no" simple: se asume que el mensaje trae la
+        # correccion (p. ej. "no, mi direccion es..."), asi que se vuelve a extraer y se le
+        # muestra el resumen actualizado para que lo confirme otra vez.
+        pedido = await extraer_datos_pedido(mensaje, historial)
+        faltantes = campos_faltantes(pedido)
+        if faltantes:
+            return mensaje_pidiendo_faltantes(faltantes), True, None
+        return construir_resumen_para_cliente(pedido), True, None
+
+    # 3. Gestion del pedido: entra aca si el bot ya estaba pidiendo los datos que faltan
     #    (el cliente deberia estar completandolos ahora) o si el cliente acaba de mencionar
     #    como va a pagar (efectivo, Nequi, transferencia) o una frase de cierre del pedido.
     #    Va antes de "solicitud de numero de pago" porque el cliente puede combinar ambas
@@ -460,22 +586,16 @@ async def generar_respuesta_completa(
         not _es_solicitud_numero_pago(mensaje)
         and (_es_confirmacion_pago(mensaje) or _es_cierre_de_pedido(mensaje))
     ):
-        from agent.pedidos import campos_faltantes, extraer_datos_pedido, mensaje_pidiendo_faltantes
+        from agent.pedidos import campos_faltantes, construir_resumen_para_cliente, extraer_datos_pedido, mensaje_pidiendo_faltantes
 
         pedido = await extraer_datos_pedido(mensaje, historial)
         faltantes = campos_faltantes(pedido)
         if faltantes:
             return mensaje_pidiendo_faltantes(faltantes), True, None
 
-        medio_pago = (pedido.get("medio_pago") or "").lower()
-        es_transferencia = "transfer" in medio_pago or "nequi" in medio_pago
-        texto_confirmacion = (
-            obtener_mensaje_confirmacion_pago()
-            if es_transferencia
-            else obtener_mensaje_confirmacion_efectivo()
-        )
-        logger.info(f"Pedido completo, se notificara al preparador: {pedido}")
-        return texto_confirmacion, True, pedido
+        # Todavia no se notifica al preparador: primero el cliente tiene que confirmar
+        # que estos datos son correctos (o corregirlos).
+        return construir_resumen_para_cliente(pedido), True, None
 
     if _es_solicitud_numero_pago(mensaje):
         return obtener_mensaje_numero_pago(), True, None
