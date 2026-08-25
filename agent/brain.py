@@ -26,7 +26,7 @@ logger = logging.getLogger("agentkit")
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 MODELO = os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
-MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS") or "512")
+MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS") or "1024")
 
 # En los modelos Gemini 3.x el razonamiento interno consume el mismo cupo que la respuesta.
 # Con un tope bajo el modelo se queda sin espacio pensando y devuelve texto vacio, y el
@@ -132,10 +132,33 @@ def obtener_mensaje_numero_pago() -> str:
 
 
 def obtener_mensaje_confirmacion_pago() -> str:
-    """Frase exacta cuando el cliente confirma que ya pago."""
+    """Frase exacta cuando el cliente confirma que ya pago Y ya dio sus datos de envio."""
     return cargar_config_prompts().get(
         "payment_confirmation_message",
         "¡Perfecto! 📱 Nuestro equipo revisara la transaccion y te informaremos cuanto antes. ¡Gracias por tu compra! ✨",
+    )
+
+
+def obtener_mensaje_solicitud_datos_envio() -> str:
+    """Frase exacta para pedir nombre, direccion y telefono tras confirmar el pago.
+
+    Sin estos datos el pedido no se puede despachar, asi que este paso es obligatorio
+    antes de dar por cerrada la venta (ver obtener_mensaje_confirmacion_pago).
+    """
+    return cargar_config_prompts().get(
+        "shipping_data_request_message",
+        "¡Genial! 📦 Para poder enviarte tu pedido necesito estos datos:\n"
+        "- Nombre completo\n- Direccion de entrega\n- Numero de telefono de contacto\n"
+        "¿Me los compartes, por favor?",
+    )
+
+
+def obtener_mensaje_datos_envio_incompletos() -> str:
+    """Frase exacta cuando el cliente responde a la solicitud de datos pero faltan cosas."""
+    return cargar_config_prompts().get(
+        "shipping_data_incomplete_message",
+        "Me falta algun dato para poder despachar tu pedido 🙏 Por favor enviame: "
+        "nombre completo, direccion de entrega y numero de telefono, todo junto.",
     )
 
 
@@ -199,6 +222,29 @@ def _es_solicitud_numero_pago(mensaje: str) -> bool:
     return bool(_PATRONES_NUMERO_PAGO.search(mensaje))
 
 
+_PATRON_TELEFONO_EN_TEXTO = re.compile(r"\d[\d\s\-]{5,}\d")
+
+
+def _incluye_datos_de_envio(mensaje: str) -> bool:
+    """
+    Heuristica para aceptar los datos de envio (nombre, direccion, telefono): el mensaje
+    debe traer al menos un numero de telefono (6+ digitos, permitiendo espacios/guiones) y
+    una extension minima, para no confundir un "ok" o una pregunta cualquiera con los datos
+    reales. No es perfecto, pero evita cerrar el pedido sin con que despacharlo.
+    """
+    return bool(_PATRON_TELEFONO_EN_TEXTO.search(mensaje)) and len(mensaje.strip()) >= 15
+
+
+def _se_pidieron_datos_de_envio(historial: list[dict]) -> bool:
+    """True si el ULTIMO mensaje del bot en la conversacion fue la solicitud de datos."""
+    if not historial:
+        return False
+    ultimo = historial[-1]
+    return ultimo["role"] == "assistant" and ultimo["content"].strip() == (
+        obtener_mensaje_solicitud_datos_envio().strip()
+    )
+
+
 def _construir_config(system_instruction: str, max_tokens: int) -> types.GenerateContentConfig:
     """Arma la config de Gemini, con el razonamiento bajo si el SDK lo soporta."""
     parametros = {
@@ -258,6 +304,27 @@ def _se_corto_por_tokens(respuesta) -> bool:
     if not candidatos:
         return False
     return str(getattr(candidatos[0], "finish_reason", "")).endswith("MAX_TOKENS")
+
+
+def _recortar_a_fin_de_oracion(texto: str) -> str:
+    """
+    Corta el texto en el ultimo punto/signo de cierre/salto de linea para no dejar una
+    palabra o frase a medias cuando no hay forma de conseguir la respuesta completa.
+    Si no encuentra ningun cierre razonable (respuesta de una sola frase muy larga),
+    devuelve el texto tal cual: es preferible una frase larga a una vacia.
+    """
+    texto = texto.rstrip()
+    mejor_corte = -1
+    for cierre in (".", "!", "?", "\n"):
+        posicion = texto.rfind(cierre)
+        if posicion > mejor_corte:
+            mejor_corte = posicion
+    # Solo vale la pena recortar si queda una porcion razonable del mensaje; si el corte
+    # deja muy poco texto (p. ej. el modelo se corto en la primera frase), es mejor
+    # mandar todo antes que una respuesta casi vacia.
+    if mejor_corte >= 10:
+        return texto[: mejor_corte + 1].strip()
+    return texto
 
 
 def _extraer_texto(respuesta) -> str:
@@ -365,20 +432,31 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, b
     if _es_saludo(mensaje):
         return obtener_mensaje_saludo(), True
 
-    # 2. Pago: confirmaciones y solicitud del numero/llave, frases exactas.
+    # 2. Datos de envio pendientes: si el ultimo mensaje del bot fue pedir nombre,
+    #    direccion y telefono, este mensaje del cliente deberia traerlos. Va antes que la
+    #    deteccion de "ya pague" porque el cliente puede repetir esa frase al responder
+    #    (p. ej. "ya pague, mis datos son..."). Sin esto el pedido queda sin como despacharse.
+    if _se_pidieron_datos_de_envio(historial):
+        if _incluye_datos_de_envio(mensaje):
+            logger.info(f"Datos de envio recibidos, se cierra la venta: {mensaje}")
+            return obtener_mensaje_confirmacion_pago(), True
+        return obtener_mensaje_datos_envio_incompletos(), True
+
+    # 3. Pago: confirmacion de pago pide primero los datos de envio (nombre, direccion,
+    #    telefono); la venta solo se da por cerrada cuando el cliente los entrega (paso 2).
     if _es_confirmacion_pago(mensaje):
-        return obtener_mensaje_confirmacion_pago(), True
+        return obtener_mensaje_solicitud_datos_envio(), True
     if _es_solicitud_numero_pago(mensaje):
         return obtener_mensaje_numero_pago(), True
 
-    # 3. Fuera del horario de atencion no se llama al modelo: el ni sabe que hora es y
+    # 4. Fuera del horario de atencion no se llama al modelo: el ni sabe que hora es y
     #    terminaba aceptando pedidos a medianoche. Va despues de los avisos de pago para
     #    no dejar colgado a quien pago justo antes de cerrar.
     if not esta_abierto():
         logger.info("Mensaje recibido fuera del horario de atencion; no se llama al modelo")
         return obtener_mensaje_fuera_de_horario(), False
 
-    # 4. Verificar que la consulta sea del negocio. Si no, frase de rechazo exacta.
+    # 5. Verificar que la consulta sea del negocio. Si no, frase de rechazo exacta.
     if not await _es_sobre_negocio(mensaje, historial):
         return obtener_mensaje_fuera_de_tema(), True
 
@@ -413,29 +491,44 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> tuple[str, b
 
     texto = _extraer_texto(respuesta)
 
-    if not texto and _se_corto_por_tokens(respuesta):
-        # Se quedo sin cupo antes de escribir nada (normalmente por el razonamiento interno).
-        # Vale la pena un intento mas con el doble de espacio antes de rendirse: la
-        # alternativa es contestarle "no entendi" a un cliente que se explico bien.
+    if _se_corto_por_tokens(respuesta):
+        # Se quedo sin cupo antes de terminar (normalmente por el razonamiento interno que
+        # consume el mismo presupuesto que el texto visible). Esto pasa tanto si no alcanzo
+        # a escribir nada como si escribio una frase o hasta una palabra a la mitad — el
+        # segundo caso es el que los clientes reportaron como "respuestas cortadas". En
+        # ambos vale la pena un intento mas con el doble de espacio antes de conformarse.
         logger.warning(
-            f"La respuesta se corto en {MAX_TOKENS} tokens sin texto; "
+            f"La respuesta se corto en {MAX_TOKENS} tokens "
+            f"({'sin texto' if not texto else 'texto incompleto: ' + texto[-60:]!r}); "
             f"se reintenta con {MAX_TOKENS * 2}"
         )
         try:
-            respuesta = await _llamar_modelo(contents, system_prompt, MAX_TOKENS * 2)
-            texto = _extraer_texto(respuesta)
+            respuesta_reintento = await _llamar_modelo(contents, system_prompt, MAX_TOKENS * 2)
+            texto_reintento = _extraer_texto(respuesta_reintento)
+            # Solo se reemplaza si el reintento realmente mejoro las cosas: termino
+            # completo, o al menos trajo mas texto que el intento original.
+            if texto_reintento and (
+                not _se_corto_por_tokens(respuesta_reintento)
+                or len(texto_reintento) > len(texto)
+            ):
+                respuesta, texto = respuesta_reintento, texto_reintento
         except Exception as e:  # noqa: BLE001
             logger.error(f"El reintento con mas tokens tambien fallo: {e}")
-
-    if _se_corto_por_tokens(respuesta):
-        logger.warning(
-            f"La respuesta se corto por llegar al tope de tokens. "
-            "Si pasa seguido, sube GEMINI_MAX_TOKENS o acorta el system prompt."
-        )
 
     if not texto:
         logger.warning("Gemini devolvio una respuesta sin texto")
         return obtener_mensaje_fallback(), False
+
+    if _se_corto_por_tokens(respuesta):
+        # Sigue cortada incluso despues del reintento. Mejor mandar una frase completa y
+        # mas corta que una a medias con una palabra partida al final.
+        texto_recortado = _recortar_a_fin_de_oracion(texto)
+        logger.warning(
+            "La respuesta sigue cortada tras el reintento; se recorta a la ultima frase "
+            f"completa. Si pasa seguido, sube GEMINI_MAX_TOKENS o acorta el system prompt. "
+            f"Original: {texto!r}"
+        )
+        texto = texto_recortado or texto
 
     uso = getattr(respuesta, "usage_metadata", None)
     entrada = getattr(uso, "prompt_token_count", "?") if uso else "?"
