@@ -1,4 +1,4 @@
-# tests/test_pedidos.py — Pedido completo -> aviso al preparador (3002797970)
+# tests/test_pedidos.py — Pedido completo -> aviso al preparador (3045686743)
 #
 #   pytest tests/test_pedidos.py
 
@@ -27,6 +27,7 @@ PEDIDO_COMPLETO_EFECTIVO = {
     "nombre": "Juan Perez",
     "direccion": "Cra 21 #50-08",
     "telefono": "3001234567",
+    "valor_producto": 15000,
 }
 
 PEDIDO_COMPLETO_TRANSFERENCIA = {**PEDIDO_COMPLETO_EFECTIVO, "medio_pago": "transferencia"}
@@ -56,6 +57,22 @@ def test_construir_texto_notificacion_efectivo_sin_nota_extra(pedidos):
 def test_construir_texto_notificacion_transferencia_agrega_nota(pedidos):
     texto = pedidos.construir_texto_notificacion(PEDIDO_COMPLETO_TRANSFERENCIA, "3001234567")
     assert "confirmar que el Nequi fue recibido" in texto
+
+
+def test_formatear_pesos_usa_puntos_como_separador(pedidos):
+    assert pedidos.formatear_pesos(15000) == "$15.000"
+    assert pedidos.formatear_pesos(1234567) == "$1.234.567"
+
+
+def test_texto_valor_producto_usa_fallback_si_no_hay_valor(pedidos):
+    assert pedidos.texto_valor_producto({}) == "el valor de tus productos"
+    assert pedidos.texto_valor_producto({"valor_producto": None}) == "el valor de tus productos"
+    assert pedidos.texto_valor_producto({"valor_producto": "no disponible"}) == "el valor de tus productos"
+
+
+def test_texto_valor_producto_formatea_el_valor_calculado(pedidos):
+    assert pedidos.texto_valor_producto({"valor_producto": 20000}) == "$20.000"
+    assert pedidos.texto_valor_producto({"valor_producto": "20000"}) == "$20.000"
 
 
 def test_resumen_para_dedup_es_estable(pedidos):
@@ -99,7 +116,9 @@ async def test_cliente_confirma_el_resumen_dispara_notificacion_efectivo(brain, 
 
     assert es_real is True
     assert pedido == PEDIDO_COMPLETO_EFECTIVO
-    assert respuesta == brain.obtener_mensaje_confirmacion_efectivo()
+    assert "Ya tengo todo tu pedido" in respuesta
+    assert "$15.000" in respuesta
+    assert "valor del domicilio" in respuesta.lower()
 
 
 async def test_cliente_confirma_el_resumen_transferencia_usa_mensaje_de_transferencia(
@@ -119,7 +138,9 @@ async def test_cliente_confirma_el_resumen_transferencia_usa_mensaje_de_transfer
 
     assert es_real is True
     assert pedido == PEDIDO_COMPLETO_TRANSFERENCIA
-    assert respuesta == brain.obtener_mensaje_confirmacion_pago()
+    assert "Nuestro equipo revisara la transaccion" in respuesta
+    assert "$15.000" in respuesta
+    assert "valor del domicilio" in respuesta.lower()
 
 
 async def test_cliente_rechaza_el_resumen_sin_decir_que_corregir(brain, monkeypatch):

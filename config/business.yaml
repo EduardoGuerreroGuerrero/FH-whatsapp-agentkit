@@ -20,7 +20,7 @@ negocio:
       - "Rappi"
     pagos:
       - "Nequi"
-      - "DaviPlata"
+      - "Llave"
 
 agente:
   nombre: "Fruppy"
@@ -33,7 +33,7 @@ pedidos:
   # Numero de WhatsApp (E.164 sin "+") al que se le avisa cada pedido confirmado, para que
   # el equipo lo prepare. Importante: mientras este numero no le haya escrito al bot en las
   # ultimas 24h, Meta puede rechazar el aviso (ver seccion 3.4 de CLAUDE.md).
-  numero_preparador: "573002797970"
+  numero_preparador: "573045686743"
 
 metadata:
   creado: "2025-05-23"

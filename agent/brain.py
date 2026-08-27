@@ -131,21 +131,26 @@ def obtener_mensaje_numero_pago() -> str:
     )
 
 
-def obtener_mensaje_confirmacion_pago() -> str:
+def obtener_mensaje_confirmacion_pago(valor_producto: str = "el valor de tus productos") -> str:
     """Frase exacta cuando el pedido queda completo y el pago es por transferencia/Nequi."""
     return cargar_config_prompts().get(
         "payment_confirmation_message",
-        "¡Perfecto! 📱 Nuestro equipo revisara la transaccion y te informaremos cuanto antes. ¡Gracias por tu compra! ✨",
-    )
+        "¡Perfecto! 📱 Nuestro equipo revisara la transaccion y te informaremos cuanto antes. "
+        "¡Gracias por tu compra! ✨\n\n"
+        "💰 Valor Total: {valor} + valor del domicilio, pendiente por confirmar. Asi uno de "
+        "nuestros asesores se comunicara contigo para cerrar la venta.",
+    ).format(valor=valor_producto)
 
 
-def obtener_mensaje_confirmacion_efectivo() -> str:
+def obtener_mensaje_confirmacion_efectivo(valor_producto: str = "el valor de tus productos") -> str:
     """Frase exacta cuando el pedido queda completo y el pago es en efectivo/contraentrega."""
     return cargar_config_prompts().get(
         "cash_confirmation_message",
         "¡Perfecto! ✅ Ya tengo todo tu pedido. Nuestro equipo lo va a preparar y te avisamos "
-        "cuando este en camino. ¡Gracias por tu compra! ✨",
-    )
+        "cuando este en camino. ¡Gracias por tu compra! ✨\n\n"
+        "💰 Valor Total: {valor} + valor del domicilio, pendiente por confirmar. Asi uno de "
+        "nuestros asesores se comunicara contigo para cerrar la venta.",
+    ).format(valor=valor_producto)
 
 
 def obtener_mensaje_faltantes_intro() -> str:
@@ -544,7 +549,13 @@ async def generar_respuesta_completa(
     # 2. El cliente esta respondiendo al RESUMEN del pedido que se le mando a confirmar
     #    (ver paso 3). Aca es donde se decide si ya se le avisa al preparador: nunca antes.
     if _se_espera_confirmacion_resumen(historial):
-        from agent.pedidos import campos_faltantes, construir_resumen_para_cliente, extraer_datos_pedido, mensaje_pidiendo_faltantes
+        from agent.pedidos import (
+            campos_faltantes,
+            construir_resumen_para_cliente,
+            extraer_datos_pedido,
+            mensaje_pidiendo_faltantes,
+            texto_valor_producto,
+        )
 
         if _es_confirmacion_resumen(mensaje):
             pedido = await extraer_datos_pedido(mensaje, historial)
@@ -556,10 +567,11 @@ async def generar_respuesta_completa(
 
             medio_pago = (pedido.get("medio_pago") or "").lower()
             es_transferencia = "transfer" in medio_pago or "nequi" in medio_pago
+            valor_producto = texto_valor_producto(pedido)
             texto_confirmacion = (
-                obtener_mensaje_confirmacion_pago()
+                obtener_mensaje_confirmacion_pago(valor_producto)
                 if es_transferencia
-                else obtener_mensaje_confirmacion_efectivo()
+                else obtener_mensaje_confirmacion_efectivo(valor_producto)
             )
             logger.info(f"Cliente confirmo el resumen, se notificara al preparador: {pedido}")
             return texto_confirmacion, True, pedido

@@ -30,7 +30,7 @@ CAMPOS_REQUERIDOS: dict[str, str] = {
 _VALORES_VACIOS = {"", "null", "none", "no especificado", "no disponible", "n/a", "desconocido"}
 
 _PROMPT_EXTRACCION = """Lee la conversacion entre un cliente y el negocio y extrae, si aparecen,
-estos datos del pedido. Responde UNICAMENTE un JSON valido con exactamente estas 5 claves,
+estos datos del pedido. Responde UNICAMENTE un JSON valido con exactamente estas 6 claves,
 sin texto adicional, sin markdown, sin explicaciones:
 
 {{
@@ -38,8 +38,14 @@ sin texto adicional, sin markdown, sin explicaciones:
   "medio_pago": "efectivo o transferencia/nequi, o null si no lo ha dicho",
   "nombre": "nombre completo del cliente, o null si no lo dio",
   "direccion": "direccion de entrega, o null si no la dio",
-  "telefono": "numero de telefono de contacto, o null si no lo dio"
+  "telefono": "numero de telefono de contacto, o null si no lo dio",
+  "valor_producto": numero entero (pesos colombianos, sin puntos ni simbolo de pesos) con la
+    suma del valor de los productos pedidos, calculado con el menu de abajo, o null si no se
+    puede calcular
 }}
+
+Menu y precios del negocio (usalo unicamente para calcular "valor_producto"):
+{menu}
 
 Conversacion:
 {conversacion}
@@ -48,6 +54,40 @@ Ultimo mensaje del cliente:
 {mensaje}
 
 JSON:"""
+
+
+def _obtener_menu_texto() -> str:
+    """
+    Extrae la seccion del menu (con precios) del system prompt, para que la extraccion de
+    pedidos pueda calcular el valor de los productos. Si el prompt no tiene esas marcas
+    (p. ej. otro negocio con el prompt editado), devuelve vacio y el LLM simplemente no
+    calcula "valor_producto".
+    """
+    from agent.brain import cargar_system_prompt  # import local: ver docstring del modulo
+
+    system_prompt = cargar_system_prompt()
+    inicio = system_prompt.find("## Menu completo")
+    fin = system_prompt.find("## Tus capacidades")
+    if inicio == -1 or fin == -1 or fin <= inicio:
+        return ""
+    return system_prompt[inicio:fin].strip()
+
+
+def formatear_pesos(valor: int) -> str:
+    """Formatea un entero como pesos colombianos: 15000 -> '$15.000'."""
+    return f"${valor:,}".replace(",", ".")
+
+
+def texto_valor_producto(pedido: dict) -> str:
+    """
+    Texto con el valor de los productos del pedido (p. ej. "$36.500"), para mostrarselo al
+    cliente en el mensaje de confirmacion final. Si no se pudo calcular, devuelve un texto
+    generico en vez de un numero inventado.
+    """
+    try:
+        return formatear_pesos(int(pedido.get("valor_producto")))
+    except (TypeError, ValueError):
+        return "el valor de tus productos"
 
 
 def _formatear_conversacion(historial: list[dict]) -> str:
@@ -85,7 +125,9 @@ async def extraer_datos_pedido(mensaje: str, historial: list[dict]) -> dict:
     from google.genai import types
 
     prompt = _PROMPT_EXTRACCION.format(
-        conversacion=_formatear_conversacion(historial), mensaje=mensaje
+        menu=_obtener_menu_texto() or "(no disponible)",
+        conversacion=_formatear_conversacion(historial),
+        mensaje=mensaje,
     )
     try:
         respuesta = await _llamar_modelo(
