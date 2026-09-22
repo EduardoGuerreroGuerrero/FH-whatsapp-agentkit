@@ -31,13 +31,36 @@ if DATABASE_URL.startswith("postgresql://"):
 elif DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 
+# asyncpg no entiende channel_binding ni sslmode (parametros de libpq que Neon
+# incluye en sus connection strings). Se traducen a `ssl`, que asyncpg si acepta.
+if DATABASE_URL.startswith("postgresql"):
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    _partes = urlsplit(DATABASE_URL)
+    _params = dict(parse_qsl(_partes.query))
+    _params.pop("channel_binding", None)
+    _sslmode = _params.pop("sslmode", None)
+    if _sslmode and "ssl" not in _params:
+        _params["ssl"] = _sslmode
+    DATABASE_URL = urlunsplit(_partes._replace(query=urlencode(_params)))
+
 if DATABASE_URL.startswith("sqlite") and os.getenv("ENVIRONMENT") == "production":
     logger.warning(
         "Estas en produccion con SQLite. El historial se va a borrar en cada redespliegue. "
         "Agrega PostgreSQL y configura DATABASE_URL para que el agente recuerde a sus clientes."
     )
 
-engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+_connect_args = (
+    # El pooler de Neon es PgBouncer en modo transaccion: el cache de prepared
+    # statements de asyncpg no sobrevive entre transacciones y falla con errores
+    # tipo "prepared statement does not exist". Se desactiva solo para Postgres.
+    {"statement_cache_size": 0}
+    if DATABASE_URL.startswith("postgresql")
+    else {}
+)
+engine = create_async_engine(
+    DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=_connect_args
+)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
