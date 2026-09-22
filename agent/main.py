@@ -85,9 +85,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AgentKit — WhatsApp AI Agent", version="2.0.0", lifespan=lifespan)
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def health_check():
-    """Endpoint de salud para Railway y monitoreo."""
+    """Endpoint de salud para monitoreo. UptimeRobot chequea con HEAD."""
     if error_configuracion:
         return {"status": "error", "service": "agentkit", "detalle": error_configuracion}
 
