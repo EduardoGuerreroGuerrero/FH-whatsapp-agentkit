@@ -1,0 +1,41 @@
+# Render Blueprint — AgentKit WhatsApp (Fruppy Helados)
+# Render lee este archivo al conectar el repo y crea el web service solo.
+# Las variables con `sync: false` se llenan a mano en el dashboard (o Render las
+# pide al aplicar el blueprint). NUNCA pongas las API keys aqui: este archivo va a GitHub.
+
+services:
+  - type: web
+    name: fruppy-whatsapp-agent
+    runtime: docker
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite
+      - key: GEMINI_MAX_TOKENS
+        value: "512"
+      - key: WHATSAPP_PROVIDER
+        value: meta
+      - key: META_VERIFY_TOKEN
+        value: fruppy-helados-2026
+      - key: META_API_VERSION
+        value: v25.0
+      # ── Secretos: llenar en el dashboard de Render ──────────
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        sync: false
+      - key: META_ACCESS_TOKEN
+        sync: false
+      - key: META_PHONE_NUMBER_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: IGNORAR_HORARIO_ATENCION
+        sync: false
