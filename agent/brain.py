@@ -222,6 +222,18 @@ _PATRONES_NUMERO_PAGO = re.compile(
     re.IGNORECASE,
 )
 
+# Pedir hablar con una persona: humano, asesor, atencion al cliente, etc.
+# Se intercepta antes del modelo para que la respuesta sea siempre la misma.
+_PATRONES_HUMANO = re.compile(
+    r"\b(hablar|comunicarme|comunicar|contactar|habla|chatear|atender|atienda|"
+    r"atendido|ponga|paseme|pase|conectar|derivar|transferir)\w*\s+(con\s+)?(un|una|el|la|al)?\s*"
+    r"(humano|asesor\w*|persona|alguien|operador\w*|agente|encargad\w*|emplead\w*|vendedor\w*|duen\w+|administrador\w*|gerente)"
+    r"|\b(humano|persona\s*real|atenci[oó]n\s*(al\s+)?cliente|servicio\s+al\s+cliente|"
+    r"asesor[ií]a\s*(humana|personal)|soporte\s*(humano|personal)|"
+    r"un\s+asesor|una\s+asesora|asesor\s*humano)\b",
+    re.IGNORECASE,
+)
+
 
 def _normalizar(texto: str) -> str:
     """Quita acentos, pasa a minusculas y elimina signos de puntuacion y emojis decorativos."""
@@ -239,6 +251,19 @@ def _es_saludo(mensaje: str) -> bool:
     return limpio in _SALUDOS
 
 
+def _empieza_con_saludo(mensaje: str) -> bool:
+    """
+    Detecta mensajes que ABREN con un saludo pero traen mas texto, como el mensaje
+    predeterminado del link wa.me ("Hola Fruppy Helados, quiero hacer un pedido").
+    Se usa solo para el primer mensaje de la conversacion: al cliente le llega el
+    saludo de bienvenida en vez de arriesgar un "no entendi" del modelo.
+    """
+    limpio = _normalizar(mensaje)
+    if not limpio:
+        return False
+    return any(limpio.startswith(s + " ") for s in _SALUDOS)
+
+
 def _es_confirmacion_pago(mensaje: str) -> bool:
     """Detecta frases tipo 'ya pague', 'pago hecho', etc."""
     return bool(_PATRONES_CONFIRMACION_PAGO.search(mensaje))
@@ -252,6 +277,20 @@ def _es_solicitud_numero_pago(mensaje: str) -> bool:
 def _es_cierre_de_pedido(mensaje: str) -> bool:
     """Detecta menciones de pago en efectivo/Nequi/transferencia o frases de cierre del pedido."""
     return bool(_PATRONES_CIERRE_PEDIDO.search(mensaje))
+
+
+def _es_solicitud_humano(mensaje: str) -> bool:
+    """Detecta que el cliente pide hablar con una persona real / asesor."""
+    return bool(_PATRONES_HUMANO.search(mensaje))
+
+
+def obtener_mensaje_handoff_humano() -> str:
+    """Frase exacta cuando el cliente pide hablar con una persona."""
+    return cargar_config_prompts().get(
+        "human_handoff_message",
+        "Claro 😊 Si prefieres hablar con una persona, escribe o llama a nuestro "
+        "asesor al 3045686743 y te atiende directamente.",
+    )
 
 
 def _se_pidieron_datos_faltantes(historial: list[dict]) -> bool:
@@ -542,9 +581,19 @@ async def generar_respuesta_completa(
     if not mensaje or len(mensaje.strip()) < 2:
         return obtener_mensaje_fallback(), False, None
 
-    # 1. Saludos: respuesta fija exacta, sin gastar llamada al LLM.
-    if _es_saludo(mensaje):
+    # 1. Saludos: respuesta fija exacta, sin gastar llamada al LLM. Si es el primer
+    #    mensaje de la conversacion y abre con un saludo (el texto predeterminado del
+    #    link wa.me, "Hola Fruppy Helados, quiero hacer un pedido", o cualquier
+    #    "hola + algo"), tambien va el saludo: asi el cliente siempre recibe una
+    #    respuesta util aunque el modelo devuelva texto vacio.
+    if _es_saludo(mensaje) or (not historial and _empieza_con_saludo(mensaje)):
         return obtener_mensaje_saludo(), True, None
+
+    # 1.5. Pedir hablar con una persona: respuesta fija con el numero del asesor,
+    #      siempre activa (incluso en medio de un pedido).
+    if _es_solicitud_humano(mensaje):
+        logger.info("El cliente pidio hablar con una persona; se envia el numero del asesor")
+        return obtener_mensaje_handoff_humano(), True, None
 
     # 2. El cliente esta respondiendo al RESUMEN del pedido que se le mando a confirmar
     #    (ver paso 3). Aca es donde se decide si ya se le avisa al preparador: nunca antes.

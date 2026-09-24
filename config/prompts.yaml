@@ -173,6 +173,7 @@ order_correction_prompt: "Cuentame que dato hay que corregir y te lo actualizo �
 payment_confirmation_message: "¡Perfecto! 📱 Nuestro equipo revisara la transaccion y te informaremos cuanto antes. ¡Gracias por tu compra! ✨\n\n💰 Valor Total: {valor} + valor del domicilio (pendiente por confirmar). Nuestro equipo se comunicara contigo para confirmar el valor del envio."
 cash_confirmation_message: "¡Perfecto! ✅ Ya tengo todo tu pedido. Nuestro equipo lo va a preparar y te avisamos cuando este en camino. ¡Gracias por tu compra! ✨\n\n💰 Valor Total: {valor} + valor del domicilio (pendiente por confirmar). Nuestro equipo se comunicara contigo para confirmar el valor del envio."
 fallback_message: "Disculpa, no entendi tu mensaje. ¿Podrias reformularlo?"
+human_handoff_message: "Claro 😊 Si prefieres hablar con una persona, escribe o llama a nuestro asesor al 3045686743 y te atiende directamente."
 closed_before_message: "¡Buenos dias! ☀️ Aun no abrimos. Nuestro horario es de 9am a 9pm.\nDesde las 9am te atendemos con todo gusto y tomamos tu pedido.\nMientras tanto puedes ver el menu en www.fruppyhelados.com 🍦"
 closed_after_message: "Por ahora estamos cerrados 🌙 Nuestro horario es de 9am a 9pm todos los dias.\nManana desde las 9am te atendemos con gusto y tomamos tu pedido.\nMientras tanto puedes ver el menu en www.fruppyhelados.com 🍦"
 unsupported_type_message: "Por ahora solo puedo leer mensajes de texto 🙏 Escribeme lo que necesitas y con gusto te ayudo. Mira nuestro menu en www.fruppyhelados.com 🍦"
